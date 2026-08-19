@@ -1,0 +1,4 @@
+interface:
+  display_name: "Revit IFC Assignment"
+  short_description: "Assign Shenzhen IFC identifiers in Revit"
+  default_prompt: "Use $revit-ifc-assignment only for an explicit IFC identifier rebuild, reuse the current/history-confirmed model without scanning project folders, execute each Revit stage once, and never retry an unknown write."

@@ -1,0 +1,642 @@
+"""Safe preview/apply workflow for synchronising DWG room labels into Revit."""
+
+from __future__ import annotations
+
+import asyncio
+from collections import Counter
+import json
+import math
+import os
+import re
+import time
+import uuid
+from pathlib import Path
+from typing import Any
+
+from app.mcp.revit_lock import RevitProcessLock
+from app.revit.client import RevitApiClient
+from app.revit.operations import call_revit_operation
+from app.runtime_paths import runtime_paths
+from app.tool_progress import set_tool_progress
+
+
+_PREVIEWS: dict[str, dict[str, Any]] = {}
+_FLOOR_WORDS = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
+_CHINESE_FLOOR_DIGITS = {
+    "零": 0,
+    "〇": 0,
+    "一": 1,
+    "二": 2,
+    "两": 2,
+    "三": 3,
+    "四": 4,
+    "五": 5,
+    "六": 6,
+    "七": 7,
+    "八": 8,
+    "九": 9,
+}
+_CHINESE_FLOOR_UNITS = {"十": 10, "百": 100}
+_FLOOR_NUMBER_TEXT = r"[0-9零〇一二两三四五六七八九十百]+"
+_FLOOR_RANGE_SEPARATORS = r"[~～\-—–至到]"
+_AUTOCAD_BUSY_MARKERS = (
+    "-2147418111",  # RPC_E_CALL_REJECTED
+    "rpc_e_call_rejected",
+    "call was rejected by callee",
+    "被呼叫方拒绝接收呼叫",
+    # pywin32 can discard the original HRESULT while formatting a late COM
+    # error, leaving only this Automation member name.  It is safe to retry
+    # here because conversion opens the source drawing read-only and writes a
+    # private temporary DXF.
+    "<unknown>.open",
+)
+
+
+def _parse_floor_number(value: str) -> int | None:
+    """Parse a positive Arabic or Chinese floor number without guessing.
+
+    This deliberately accepts ordinary Chinese values such as ``十一`` and
+    ``三十``.  It returns ``None`` for anything that is not a number, instead
+    of falling through to ``int()`` and terminating the whole room workflow.
+    """
+    text = re.sub(r"\s+", "", str(value or "")).replace("兩", "两")
+    if not text:
+        return None
+    if text.isdecimal():
+        number = int(text)
+        return number if number > 0 else None
+
+    total = 0
+    current = 0
+    saw_digit = False
+    for char in text:
+        if char in _CHINESE_FLOOR_DIGITS:
+            current = _CHINESE_FLOOR_DIGITS[char]
+            saw_digit = True
+            continue
+        unit = _CHINESE_FLOOR_UNITS.get(char)
+        if unit is None:
+            return None
+        total += (current or 1) * unit
+        current = 0
+    number = total + current
+    return number if saw_digit and number > 0 else None
+
+
+def _contains_floor_range(text: str) -> bool:
+    """Return whether a name contains a multi-floor expression.
+
+    A range is not a single-floor filename hint.  It must be resolved from the
+    drawing title, or explicitly confirmed by the user, before room names are
+    written into Revit.
+    """
+    token = rf"(?:地下\s*)?(?:{_FLOOR_NUMBER_TEXT})(?:\s*(?:层|[Ff]))?"
+    return bool(
+        re.search(
+            rf"{token}\s*{_FLOOR_RANGE_SEPARATORS}\s*{token}\s*(?:层|[Ff])?",
+            text,
+            flags=re.IGNORECASE,
+        )
+    )
+
+
+def _floor_from_path(dwg_path: str) -> int | None:
+    """Return only an unambiguous single-floor filename candidate.
+
+    The value is a compatibility hint, never an input-file filter or final
+    decision.  Unknown syntax and ranges intentionally return ``None``.
+    """
+    name = Path(dwg_path).stem
+    if _contains_floor_range(name):
+        return None
+
+    match = re.search(rf"地下\s*({_FLOOR_NUMBER_TEXT})\s*层", name)
+    if match:
+        number = _parse_floor_number(match.group(1))
+        return -number if number is not None else None
+    match = re.search(r"(?:^|[-_])B0*([1-9][0-9]*)", name, flags=re.IGNORECASE)
+    if match:
+        return -int(match.group(1))
+    match = re.search(rf"({_FLOOR_NUMBER_TEXT})\s*层", name)
+    if match:
+        return _parse_floor_number(match.group(1))
+
+    # A project drawing is often named ``1F建筑平面图`` or ``F01_建筑``.
+    # This is only a quick ordering hint: callers must never use it to decide
+    # whether a DWG participates in room creation.
+    match = re.search(
+        r"(?:^|[^A-Za-z0-9])(?:F0*([1-9][0-9]*)|([1-9][0-9]*)F)(?:$|[^A-Za-z0-9])",
+        name,
+        flags=re.IGNORECASE,
+    )
+    if match:
+        return int(match.group(1) or match.group(2))
+    return None
+
+
+def _preview_file(preview_id: str) -> Path:
+    folder = runtime_paths.workspace_dir / "room-sync-previews"
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder / f"{preview_id}.json"
+
+
+def _store_preview(preview_id: str, preview: dict[str, Any]) -> None:
+    payload = {"preview": preview, "created_at": time.monotonic()}
+    _PREVIEWS[preview_id] = payload
+    _preview_file(preview_id).write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+
+def _take_preview(preview_id: str) -> dict[str, Any] | None:
+    cached = _PREVIEWS.pop(preview_id, None)
+    path = _preview_file(preview_id)
+    if cached is None and path.is_file():
+        cached = json.loads(path.read_text(encoding="utf-8"))
+    if path.exists():
+        path.unlink()
+    return cached
+
+
+def _points(node: dict[str, Any]) -> tuple[tuple[float, ...], tuple[float, ...]]:
+    begin, end = node.get("Begin_Position"), node.get("End_Position")
+    if not isinstance(begin, list) or not isinstance(end, list) or len(begin) < 2 or len(end) < 2:
+        raise ValueError("Revit 插件返回的轴网端点不完整")
+    return tuple(map(float, begin)), tuple(map(float, end))
+
+
+def close_autocad_document_if_open(dwg_path: str) -> bool:
+    """Close only the matching AutoCAD document without saving it."""
+    try:
+        import pythoncom
+        import win32com.client
+    except ImportError:
+        return False
+    pythoncom.CoInitialize()
+    try:
+        app = win32com.client.GetActiveObject("AutoCAD.Application.23.1")
+        target = os.path.normcase(os.path.abspath(dwg_path))
+        for index in range(app.Documents.Count):
+            document = app.Documents.Item(index)
+            if os.path.normcase(os.path.abspath(document.FullName)) == target:
+                document.Close(False)
+                return True
+    except Exception:
+        return False
+    finally:
+        pythoncom.CoUninitialize()
+    return False
+
+
+def _normalise_floor_number(value: Any, default: int | float = 0) -> int | float:
+    """Compatibility wrapper for legacy callers that used a zero default."""
+    number = _coerce_floor_number(value)
+    return default if number is None else number
+
+
+def _coerce_floor_number(value: Any) -> int | float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(number):
+        return None
+    return int(number) if number.is_integer() else number
+
+
+def _floor_entries_from_bounds(
+    minimum: int | float,
+    maximum: int | float,
+) -> list[int | float]:
+    if minimum == maximum:
+        return [minimum]
+    if isinstance(minimum, int) and isinstance(maximum, int):
+        start, end = sorted((minimum, maximum))
+        # A malformed title must never fan one room payload out to thousands of
+        # Revit levels.  Real building drawings are far below this bound.
+        if end - start > 200:
+            return []
+        return list(range(start, end + 1))
+    return list(dict.fromkeys((minimum, maximum)))
+
+
+def _floor_entries_from_drawing_info(floor_info: Any) -> list[int | float]:
+    """Normalise a title detector result without inventing an unknown level."""
+    if not isinstance(floor_info, dict):
+        return []
+
+    if "min_floor" in floor_info or "max_floor" in floor_info:
+        min_floor = _coerce_floor_number(floor_info.get("min_floor"))
+        max_floor = _coerce_floor_number(floor_info.get("max_floor"))
+        if min_floor is None or max_floor is None:
+            return []
+    else:
+        floor_num = _coerce_floor_number(floor_info.get("floor_num"))
+        if floor_num is None:
+            return []
+        min_floor = max_floor = floor_num
+
+    return _floor_entries_from_bounds(min_floor, max_floor)
+
+
+def _parse_floor_reference(value: str) -> int | None:
+    """Parse one floor endpoint from a drawing title, including basement form."""
+    text = re.sub(r"\s+", "", str(value or ""))
+    if not text:
+        return None
+
+    underground = text.startswith("地下")
+    if underground:
+        text = text[2:]
+    match = re.fullmatch(r"[Bb]0*([1-9][0-9]*)", text)
+    if match:
+        return -int(match.group(1))
+    match = re.fullmatch(r"[Ff]0*([1-9][0-9]*)", text)
+    if match:
+        return int(match.group(1))
+    match = re.fullmatch(r"0*([1-9][0-9]*)[Ff]", text)
+    if match:
+        return int(match.group(1))
+
+    text = re.sub(r"(?:层|[Ff])$", "", text, flags=re.IGNORECASE)
+    number = _parse_floor_number(text)
+    if number is None:
+        return None
+    return -number if underground else number
+
+
+def _floor_entries_from_title_text(text: str) -> list[int | float]:
+    """Extract a concrete level or range from one drawing-title string."""
+    compact = re.sub(r"\s+", "", str(text or ""))
+    if not compact:
+        return []
+
+    endpoint = (
+        rf"(?:地下)?(?:[Bb]0*[1-9][0-9]*|[Ff]0*[1-9][0-9]*|"
+        rf"0*[1-9][0-9]*[Ff]|{_FLOOR_NUMBER_TEXT})(?:层)?"
+    )
+    range_match = re.search(
+        rf"(?P<minimum>{endpoint})\s*{_FLOOR_RANGE_SEPARATORS}\s*"
+        rf"(?P<maximum>{endpoint})",
+        compact,
+        flags=re.IGNORECASE,
+    )
+    if range_match:
+        minimum = _parse_floor_reference(range_match.group("minimum"))
+        maximum = _parse_floor_reference(range_match.group("maximum"))
+        if minimum is not None and maximum is not None:
+            return _floor_entries_from_bounds(minimum, maximum)
+
+    if "首层" in compact or "地面层" in compact:
+        return [1]
+    basement = re.search(rf"地下\s*({_FLOOR_NUMBER_TEXT})\s*层", compact)
+    if basement:
+        number = _parse_floor_number(basement.group(1))
+        return [-number] if number is not None else []
+    b_floor = re.search(r"(?:^|[^A-Za-z0-9])[Bb]0*([1-9][0-9]*)(?:$|[^A-Za-z0-9])", compact)
+    if b_floor:
+        return [-int(b_floor.group(1))]
+    f_floor = re.search(r"(?:^|[^A-Za-z0-9])(?:[Ff]0*([1-9][0-9]*)|([1-9][0-9]*)[Ff])(?:$|[^A-Za-z0-9])", compact)
+    if f_floor:
+        return [int(f_floor.group(1) or f_floor.group(2))]
+    ordinary = re.search(rf"({_FLOOR_NUMBER_TEXT})\s*层", compact)
+    if ordinary:
+        number = _parse_floor_number(ordinary.group(1))
+        return [number] if number is not None else []
+    return []
+
+
+def _title_candidate_score(text: str) -> int:
+    """Rank likely title-block strings over incidental drawing annotations."""
+    compact = re.sub(r"\s+", "", text)
+    if not compact or len(compact) > 120:
+        return 0
+    if any(marker in compact for marker in ("平面图", "图纸名称", "图名")):
+        return 100
+    if "层" in compact or re.search(r"(?:^|[^A-Za-z0-9])[BbFf]\d+", compact):
+        return 20
+    return 0
+
+
+def _resolved_floor_detection(
+    *,
+    source: str,
+    confidence: str,
+    floor_entries: list[int | float],
+    filename_hint: int | float | None,
+    matched_text: str = "",
+    candidates: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    return {
+        "status": "resolved",
+        "source": source,
+        "confidence": confidence,
+        "matched_text": matched_text,
+        "floor_entries": floor_entries,
+        "filename_hint": filename_hint,
+        "candidates": candidates or [],
+    }
+
+
+def _selection_required_floor_detection(
+    *,
+    filename_hint: int | float | None,
+    candidates: list[dict[str, Any]] | None = None,
+    source: str = "unresolved",
+) -> dict[str, Any]:
+    return {
+        "status": "selection_required",
+        "source": source,
+        "confidence": "none",
+        "matched_text": "",
+        "floor_entries": [],
+        "filename_hint": filename_hint,
+        "candidates": candidates or [],
+    }
+
+
+def _resolve_floor_from_local_drawing_title(
+    dxf_path: str,
+    *,
+    filename_hint: int | float | None,
+) -> dict[str, Any] | None:
+    """Use explicit DXF title text before consulting any filename hint.
+
+    This is intentionally deterministic and cheap.  The legacy model-backed
+    title reader remains a low-frequency fallback for drawings whose title is
+    too irregular for these clear patterns.
+    """
+    try:
+        from q_agent_function_module.ohresult.CAD_Git_Coordinates.my_code.room_coordinates.git_cad_floor import (
+            extract_all_texts_from_dxf,
+        )
+
+        raw_texts = extract_all_texts_from_dxf(dxf_path)
+    except Exception:
+        return None
+
+    candidates: list[tuple[int, str, list[int | float]]] = []
+    for raw_text in raw_texts:
+        text = re.sub(r"\\[a-zA-Z0-9]+;|\{[^{}]*\}", "", str(raw_text or "")).strip()
+        score = _title_candidate_score(text)
+        if not score:
+            continue
+        entries = _floor_entries_from_title_text(text)
+        if entries:
+            candidates.append((score, text, entries))
+    if not candidates:
+        return None
+
+    highest_score = max(item[0] for item in candidates)
+    strongest = [item for item in candidates if item[0] == highest_score]
+    by_entries: dict[tuple[int | float, ...], list[str]] = {}
+    for _, text, entries in strongest:
+        by_entries.setdefault(tuple(entries), []).append(text)
+    if len(by_entries) == 1:
+        entries, texts = next(iter(by_entries.items()))
+        return _resolved_floor_detection(
+            source="drawing_text",
+            confidence="high",
+            floor_entries=list(entries),
+            filename_hint=filename_hint,
+            matched_text=texts[0],
+        )
+    return _selection_required_floor_detection(
+        filename_hint=filename_hint,
+        source="drawing_text",
+        candidates=[
+            {"matched_text": texts[0], "floor_entries": list(entries)}
+            for entries, texts in by_entries.items()
+        ],
+    )
+
+
+def _resolve_floor_from_legacy_title_reader(
+    dxf_path: str,
+    *,
+    filename_hint: int | float | None,
+) -> dict[str, Any] | None:
+    """Retain the existing model-assisted title reader as a compatibility fallback."""
+    try:
+        from q_agent_function_module.ohresult.CAD_Git_Coordinates.my_code.room_coordinates.git_cad_floor import (
+            get_cad_floor_info,
+        )
+
+        floor_info = get_cad_floor_info(dxf_path)
+    except Exception:
+        return None
+    if not isinstance(floor_info, dict):
+        return None
+    entries = _floor_entries_from_drawing_info(floor_info)
+    matched_text = str(floor_info.get("matched_text") or "").strip()
+    # The legacy prompt uses zero as its "cannot determine" sentinel.  It is
+    # not safe to turn that sentinel into a first-floor Revit write; an
+    # explicit 1F/一层 title or user mapping resolves that case instead.
+    if not entries or entries == [0] or not matched_text:
+        return None
+    return _resolved_floor_detection(
+        source="drawing_text",
+        confidence="medium",
+        floor_entries=entries,
+        filename_hint=filename_hint,
+        matched_text=matched_text,
+    )
+
+
+def _extract_rooms_and_floor_from_dwg(
+    dwg_path: str,
+    *,
+    fallback_floor: int | float | None = None,
+) -> tuple[dict[str, Any], list[int | float], dict[str, Any]]:
+    """Process one DWG once and return its rooms plus its floor mapping.
+
+    Every caller passes a project DWG into this function.  A filename-derived
+    value is only a compatibility candidate: title-block information inside
+    the converted drawing always takes precedence, and an unresolved drawing
+    remains part of the preflight rather than being silently filtered out.
+    """
+    from q_agent_function_module.ohresult.CAD_Git_Coordinates.my_code.room_coordinates.dwg_room_extractor import (
+        process_dwg_room_extraction,
+    )
+    from q_agent_function_module.ohresult.CAD_Git_Coordinates.my_code.room_coordinates.dwg_room_extractor_main import (
+        _convert_dwg_to_dxf_via_autocad,
+    )
+
+    # AutoCAD can reject an Automation call while it is completing a command
+    # (RPC_E_CALL_REJECTED).  Retrying the conversion is safe: it only opens
+    # the source read-only and writes a private temporary DXF.  Never repair
+    # this condition by killing/restarting AutoCAD or closing unrelated files.
+    for attempt in range(3):
+        dxf_path: str | None = None
+        try:
+            dxf_path = _convert_dwg_to_dxf_via_autocad(dwg_path)
+            set_tool_progress(
+                "revit_create_and_name_ar_rooms",
+                "正在识别 DWG 房间文字",
+                drawing_name=Path(dwg_path).name,
+            )
+            extracted = process_dwg_room_extraction(dxf_path)
+            local_detection = _resolve_floor_from_local_drawing_title(
+                dxf_path,
+                filename_hint=fallback_floor,
+            )
+            if local_detection is not None:
+                return extracted, local_detection["floor_entries"], local_detection
+
+            legacy_detection = _resolve_floor_from_legacy_title_reader(
+                dxf_path,
+                filename_hint=fallback_floor,
+            )
+            if legacy_detection is not None:
+                return extracted, legacy_detection["floor_entries"], legacy_detection
+
+            if fallback_floor is not None:
+                entries = [_normalise_floor_number(fallback_floor)]
+                detection = _resolved_floor_detection(
+                    source="filename_hint",
+                    confidence="medium",
+                    floor_entries=entries,
+                    filename_hint=fallback_floor,
+                )
+                return extracted, entries, detection
+
+            detection = _selection_required_floor_detection(
+                filename_hint=fallback_floor,
+            )
+            return extracted, [], detection
+        except RuntimeError as error:
+            text = str(error).casefold()
+            is_busy = any(marker in text for marker in _AUTOCAD_BUSY_MARKERS)
+            if not is_busy or attempt == 2:
+                raise
+            time.sleep(2 * (attempt + 1))
+        finally:
+            if dxf_path and os.path.exists(dxf_path):
+                os.remove(dxf_path)
+
+    raise RuntimeError("AutoCAD DWG conversion did not complete")
+
+
+def _extract_rooms_from_dwg(dwg_path: str) -> dict[str, Any]:
+    """Backward-compatible room-only wrapper used by older call sites."""
+    extracted, _, _ = _extract_rooms_and_floor_from_dwg(
+        dwg_path,
+        fallback_floor=_floor_from_path(dwg_path),
+    )
+    return extracted
+
+
+class RoomSyncWorkflow:
+    """Use one read-only preview before allowing a room-name update."""
+
+    def __init__(self, client: RevitApiClient | None = None) -> None:
+        self.client = client or RevitApiClient()
+        self.lock = RevitProcessLock()
+
+    async def preview(
+        self,
+        dwg_path: str,
+        target_model_path: str,
+        discipline: str,
+        allow_length_mismatch: bool = True,
+    ) -> dict[str, Any]:
+        if Path(dwg_path).suffix.lower() != ".dwg" or not Path(dwg_path).is_file():
+            raise ValueError("dwg_path 必须是存在的 .dwg 文件")
+        if discipline.strip().upper() not in {"AR", "建筑"}:
+            raise ValueError("房间同步仅适用于用户确认的建筑（AR）模型")
+        async with self.lock.hold():
+            cad_document_closed = await asyncio.to_thread(close_autocad_document_if_open, dwg_path)
+            grid = await call_revit_operation(
+                self.client, "DwgRevitGridData", self.client.dwg_revit_grid_data, dwg_path
+            )
+            from q_agent_function_module.ohresult.CAD_Git_Coordinates.my_code.room_coordinates.coordinate_transformation import (
+                calculate_segment_translation_vector,
+                transform_room_texts,
+                validate_translation_alignment,
+            )
+
+            rvt_grid, dwg_grid = grid.get("rvtGrid", {}), grid.get("dwgGrid", {})
+            rvt_line, dwg_line = _points(rvt_grid), _points(dwg_grid)
+            alignment = validate_translation_alignment(
+                rvt_line, dwg_line, allow_length_mismatch=allow_length_mismatch
+            )
+            if not alignment["valid"]:
+                return {
+                    "status": "blocked",
+                    "reason": alignment["reason"],
+                    "grid_axis_code": {"revit": rvt_grid.get("AxisCode"), "dwg": dwg_grid.get("AxisCode")},
+                    "alignment": alignment,
+                    "cad_document_closed": cad_document_closed,
+                }
+
+            # The plugin may have opened the drawing while reading its grid.
+            await asyncio.to_thread(close_autocad_document_if_open, dwg_path)
+            extracted, floor_entries, floor_detection = await asyncio.to_thread(
+                _extract_rooms_and_floor_from_dwg,
+                dwg_path,
+                fallback_floor=_floor_from_path(dwg_path),
+            )
+            if floor_detection.get("status") != "resolved" or not floor_entries:
+                return {
+                    "status": "selection_required",
+                    "reason": "Unable to uniquely determine this DWG drawing's floor.",
+                    "dwg_path": dwg_path,
+                    "floor_detection": floor_detection,
+                    "alignment": alignment,
+                    "cad_document_closed": cad_document_closed,
+                }
+            transformed = transform_room_texts(
+                extracted, calculate_segment_translation_vector(rvt_line, dwg_line)
+            )
+
+        rooms = [item for item in transformed["room_texts"] if item.get("RoomName", "").strip()]
+        filter_summary = Counter(
+            item.get("reason", "未知") for item in extracted.get("filtered_out", [])
+        )
+        floor_num = floor_entries[0]
+        room_data = [{"floor_num": floor, "room_texts": rooms} for floor in floor_entries]
+        preview_id = uuid.uuid4().hex
+        preview = {
+            "status": "ready",
+            "preview_id": preview_id,
+            "dwg_path": dwg_path,
+            "target_model_path": target_model_path,
+            "floor_num": floor_num,
+            "floor_numbers": floor_entries,
+            "floor_detection": floor_detection,
+            "room_count": len(rooms),
+            "filtered_count": sum(filter_summary.values()),
+            "filter_summary": dict(filter_summary),
+            "room_data": room_data,
+            "grid_axis_code": {"revit": rvt_grid.get("AxisCode"), "dwg": dwg_grid.get("AxisCode")},
+            "alignment": alignment,
+            "translation_only": True,
+            "cad_document_closed": cad_document_closed,
+            "warning": "插件未提供活动模型路径校验或房间创建结果；写入后仅报告插件原始响应。",
+        }
+        _store_preview(preview_id, preview)
+        return preview
+
+    async def apply(self, preview_id: str, confirmed: bool) -> dict[str, Any]:
+        if not confirmed:
+            raise ValueError("写入房间前必须明确确认预览结果")
+        cached = _take_preview(preview_id)
+        if not cached:
+            raise ValueError("预览不存在或已使用；请重新生成预览")
+        preview = cached["preview"]
+        if preview["status"] != "ready" or not preview["alignment"]["valid"]:
+            raise ValueError("该预览未通过坐标校验，禁止写入")
+        async with self.lock.hold():
+            response = await call_revit_operation(
+                self.client, "UpdateRoomName", self.client.update_room_name, preview["room_data"]
+            )
+        return {
+            "status": "update_requested",
+            "preview_id": preview_id,
+            "room_count": preview["room_count"],
+            "plugin_message": response.get("msg", "Revit 插件未返回说明"),
+            "plugin_response": response,
+            "saved": False,
+            "note": "C# 接口未声明是否自动创建缺失房间；结果只代表插件已接受更新请求。",
+        }
+
+    def close(self) -> None:
+        self.lock.close()

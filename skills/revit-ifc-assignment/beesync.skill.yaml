@@ -1,0 +1,17 @@
+package_version: 1.5.1
+mcp_bindings:
+  - server_id: revit_local
+    tools:
+      - revit_launch_application
+      - revit_launch_versioned_model
+      - revit_open_project_model
+      - revit_open_file
+      - revit_save_as
+      - revit_export_ifc
+      - sz_ifc_open_model
+      - revit_inspect_ifc
+runtime_tools:
+  - revit_run_ifc_assignment
+permissions:
+  filesystem: explicit_paths_and_workspace
+  network: false

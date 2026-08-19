@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "example_local_tool": {
+      "type": "stdio",
+      "command": "C:\\Tools\\ExampleMcp\\example-mcp.exe",
+      "args": ["--stdio"],
+      "enabled": false
+    },
+    "example_remote_tool": {
+      "type": "sse",
+      "url": "http://127.0.0.1:39001/sse",
+      "enabled": false
+    }
+  }
+}

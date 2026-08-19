@@ -1,0 +1,10 @@
+{
+    "mcpServers": {
+        "revit_local": {
+            "type": "sse",
+            "url": "http://127.0.0.1:8000/sse",
+            "load_mode": "skill_scoped",
+            "skill": "revit-ifc-assignment"
+        }
+    }
+}

@@ -1,0 +1,448 @@
+<Window x:Class="AiConstruction.View.MainInterface.HomeInterface"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        xmlns:hc="https://handyorg.github.io/handycontrol"
+        xmlns:viewmodel="clr-namespace:AiConstruction.ViewModel"
+        xmlns:model="clr-namespace:AiConstruction.Model"
+        xmlns:markd="clr-namespace:MarkdView.Controls;assembly=MarkdView"
+        d:DataContext="{d:DesignInstance Type=viewmodel:HomeInterfaceVM}"
+        Title="AI智建"
+        Height="800"
+        Width="1200"
+        WindowStartupLocation="CenterScreen">
+    <WindowChrome.WindowChrome>
+        <WindowChrome UseAeroCaptionButtons="False" />
+    </WindowChrome.WindowChrome>
+
+    <Grid Background="#F0F0F2">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="38" />
+            <RowDefinition />
+        </Grid.RowDefinitions>
+
+        <!-- 标题栏 -->
+        <Grid MouseLeftButtonDown="Grid_MouseLeftButtonDown">
+            <StackPanel Margin="8 0 0 0"
+                        HorizontalAlignment="Left"
+                        VerticalAlignment="Center"
+                        Orientation="Horizontal">
+                <Image Source="pack://application:,,,/AiConstruction;component/img/logo-300 1.png"
+                       Width="24"
+                       Height="24" />
+                <TextBlock Text="Ai智建"
+                           Foreground="#303133"
+                           Margin="10 0 0 0"
+                           FontSize="15"
+                           VerticalAlignment="Center" />
+                <Button Margin="32 0 0 0"
+                        BorderThickness="0"
+                        Command="{Binding HideSidebarCommand}"
+                        Style="{StaticResource ImageFlatButtonStyle}"
+                        Background="Transparent">
+                    <Image Source="pack://application:,,,/AiConstruction;component/img/SidebarSimple.png"
+                           Stretch="Uniform"
+                           Width="18"
+                           Height="18" />
+                </Button>
+                <Button Margin="14 0 0 0"
+                        BorderThickness="0"
+                        Style="{StaticResource ImageFlatButtonStyle}"
+                        Background="Transparent">
+                    <Image Source="pack://application:,,,/AiConstruction;component/img/MagnifyingGlass.png"
+                           Stretch="Uniform"
+                           Width="18"
+                           Height="18" />
+                </Button>
+            </StackPanel>
+            <StackPanel Margin="0 0 0 0"
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Center"
+                        Orientation="Horizontal">
+                <Button Style="{StaticResource MinBtnStyle}"
+                        Command="{Binding MinimizeCommand}"
+                        CommandParameter="{Binding RelativeSource={RelativeSource FindAncestor,AncestorType={x:Type Window}}}" />
+                <ToggleButton Style="{StaticResource MaxRestoreBtnStyle}"
+                              Checked="BtnMax_Checked"
+                              Name="MaxBtn"
+                              Unchecked="BtnMax_Unchecked" />
+                <Button Style="{StaticResource CloseBtnStyle}"
+                        Command="{Binding CloseCommand}"
+                        CommandParameter="{Binding RelativeSource={RelativeSource FindAncestor,AncestorType={x:Type Window}}}" />
+            </StackPanel>
+        </Grid>
+
+        <!-- 主体区域 -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="{Binding SidebarColumnWidth,UpdateSourceTrigger=PropertyChanged}" />
+                <ColumnDefinition />
+            </Grid.ColumnDefinitions>
+
+            <!-- 侧边栏 -->
+            <Grid Visibility="{Binding HideSidebar,UpdateSourceTrigger=PropertyChanged}" />
+
+            <!-- 聊天主区域 -->
+            <Border Grid.Column="1"
+                    BorderThickness="1"
+                    BorderBrush="#D9DBDE"
+                    Background="#F8F8FA"
+                    CornerRadius="4 0 0 0">
+                <Border.Effect>
+                    <DropShadowEffect Color="#000000"
+                                      Opacity="0.08"
+                                      BlurRadius="8"
+                                      ShadowDepth="2"
+                                      Direction="135" />
+                </Border.Effect>
+                <Grid HorizontalAlignment="Stretch"
+                      Margin="0 30 0 30">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="8*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition />
+                        <RowDefinition Height="217" />
+                    </Grid.RowDefinitions>
+
+                    <!-- 初始标题 -->
+                    <StackPanel Orientation="Vertical"
+                                Grid.Row="0"
+                                Grid.Column="1"
+                                VerticalAlignment="Center"
+                                Visibility="{Binding InitializeTitie,UpdateSourceTrigger=PropertyChanged}">
+                        <TextBlock Text="AI智建"
+                                   FontSize="38"
+                                   Foreground="#303133"
+                                   HorizontalAlignment="Left" />
+                        <TextBlock Text="你的BIM超频引擎"
+                                   FontSize="38"
+                                   Foreground="#303133"
+                                   HorizontalAlignment="Left" />
+                    </StackPanel>
+
+                    <!-- 对话气泡区域 -->
+                    <Border Visibility="{Binding DialogueContent}"
+                            Grid.Row="0"
+                            FocusVisualStyle="{x:Null}"
+                            Grid.Column="1"
+                            BorderThickness="0"
+                            Background="Transparent">
+                        <!-- 气泡消息列表 -->
+                        <ScrollViewer x:Name="scrollViewer"
+                                      FocusVisualStyle="{x:Null}"
+                                      VerticalScrollBarVisibility="Auto"
+                                      Padding="0 8">
+                            <ItemsControl ItemsSource="{Binding Messages}"
+                                          FocusVisualStyle="{x:Null}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="{x:Type model:ChatMessage}">
+                                        <DataTemplate.Resources>
+                                            <Style TargetType="FlowDocumentScrollViewer">
+                                                <Setter Property="BorderThickness" Value="0" />
+                                                <Setter Property="FocusVisualStyle"
+                                                        Value="{x:Null}" />
+                                                <Setter Property="BorderBrush" Value="Transparent" />
+                                                <Setter Property="IsToolBarVisible" Value="False" />
+                                                <Setter Property="Background" Value="Transparent" />
+                                                <Setter Property="VerticalScrollBarVisibility" Value="Disabled" />
+                                                <Setter Property="HorizontalScrollBarVisibility" Value="Disabled" />
+                                            </Style>
+                                        </DataTemplate.Resources>
+
+                                        <Grid>
+                                            <!-- ========== 用户消息气泡 ========== -->
+                                            <Border x:Name="UserBubble"
+                                                    Visibility="Collapsed"
+                                                    CornerRadius="12"
+                                                    Padding="10 6"
+                                                    Margin="0 6"
+                                                    MaxWidth="520"
+                                                    HorizontalAlignment="Right"
+                                                    Background="#F2F2F2">
+                                                <TextBox Text="{Binding Content}"
+                                                         IsReadOnly="True"
+                                                         BorderThickness="0"
+                                                         Background="Transparent"
+                                                         TextWrapping="Wrap"
+                                                         FontSize="14"
+                                                      
+                                                         Foreground="#303133"
+                                                         CaretBrush="#303133" />
+                                            </Border>
+
+                                            <!-- ========== AI 消息 ========== -->
+                                            <StackPanel x:Name="AiMessageGrid"
+                                                        Visibility="Collapsed"  FocusVisualStyle="{x:Null}">
+                                                <!-- 工具步骤列表（可折叠，默认整体折叠） -->
+                                                <Border x:Name="StepsPanel"
+                                                        BorderThickness="0"
+                                                        CornerRadius="8"
+                                                        Background="#F5F5F7"
+                                                        Padding="12 10"
+                                                        Margin="0 0 0 10"
+                                                        HorizontalAlignment="Left"
+                                                        MaxWidth="520"
+                                                        Visibility="Visible">
+                                                    <StackPanel>
+                                                        <!-- 折叠头：文字在左，箭头在右（点击整体展开/折叠） -->
+                                                        <Grid MouseLeftButtonDown="StepsHeader_MouseLeftButtonDown"
+                                                              Cursor="Hand">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition />
+                                                                <ColumnDefinition Width="Auto" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBlock Text="{Binding StepsHeaderText}"
+                                                                       FontSize="13"
+                                                                       Foreground="#999"
+                                                                       VerticalAlignment="Center" />
+                                                            <TextBlock Grid.Column="1"
+                                                                       FontSize="12"
+                                                                       Foreground="#BBB"
+                                                                       VerticalAlignment="Center"
+                                                                       Margin="8 0 0 0">
+                                                                <TextBlock.Style>
+                                                                    <Style TargetType="TextBlock">
+                                                                        <Setter Property="Text" Value="▶" />
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding IsStepsExpanded}" Value="True">
+                                                                                <Setter Property="Text" Value="∨" />
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </TextBlock.Style>
+                                                            </TextBlock>
+                                                        </Grid>
+
+                                                        <!-- 步骤明细列表（展开时显示） -->
+                                                        <ItemsControl ItemsSource="{Binding Steps}"
+                                                                      Margin="0 10 0 0"
+                                                                      BorderThickness="0"
+                                                                      Background="Transparent"
+                                                                      Visibility="{Binding IsStepsExpanded, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate DataType="{x:Type model:ToolStep}">
+                                                                    <StackPanel Margin="0 0 0 10">
+                                                                        <!-- 步骤标题行：编号 + 标题 -->
+                                                                        <StackPanel Orientation="Horizontal"
+                                                                                    VerticalAlignment="Top">
+                                                                            <TextBlock Text="{Binding StepNumber, StringFormat='{}{0}.'}"
+                                                                                       FontSize="13"
+                                                                                       Foreground="#999"
+                                                                                       Margin="0 0 6 0"
+                                                                                       VerticalAlignment="Top" />
+                                                                            <TextBlock Text="{Binding Title}"
+                                                                                       FontSize="13"
+                                                                                       Foreground="#555"
+                                                                                       TextWrapping="Wrap"
+                                                                                       MaxWidth="420"
+                                                                                       VerticalAlignment="Top" />
+                                                                        </StackPanel>
+
+                                                                        <!-- 步骤详情（有内容时直接显示） -->
+                                                                        <TextBlock FontSize="12"
+                                                                                   Foreground="#999"
+                                                                                   TextWrapping="Wrap"
+                                                                                   MaxWidth="400"
+                                                                                   Margin="18 2 0 0"
+                                                                                   Text="{Binding Content}">
+                                                                            <TextBlock.Style>
+                                                                                <Style TargetType="TextBlock">
+                                                                                    <Setter Property="Visibility" Value="Visible" />
+                                                                                    <Style.Triggers>
+                                                                                        <DataTrigger Binding="{Binding Content}" Value="">
+                                                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                                                        </DataTrigger>
+                                                                                    </Style.Triggers>
+                                                                                </Style>
+                                                                            </TextBlock.Style>
+                                                                        </TextBlock>
+                                                                    </StackPanel>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                    </StackPanel>
+                                                </Border>
+
+                                                <!-- Markdown 内容（始终可见） -->
+                                                <markd:MarkdownViewer x:Name="MdViewer"
+                                                                      Content="{Binding Content}"
+                                                                      Theme="Auto"
+                                                                      EnableStreaming="False"
+                                                                      
+                                                                      UseTransparentCanvas="True"
+                                                                      BorderThickness="0"
+                                                                      BorderBrush="Transparent"
+                                                                      Background="Transparent"
+                                                                      VerticalScrollBarVisibility="Disabled"
+                                                                      HorizontalScrollBarVisibility="Disabled" />
+                                                <!-- 思考中动画（底部状态提示，与内容叠加显示） -->
+                                                <StackPanel x:Name="ThinkingPanel"
+                                                            Orientation="Horizontal"
+                                                            Margin="0 4 0 0"
+                                                            Visibility="Collapsed">
+                                                    <TextBlock Text="{Binding ThinkingText}"
+                                                               FontSize="14"
+                                                               Foreground="#999"
+                                                               VerticalAlignment="Center" />
+                                                    <StackPanel Orientation="Horizontal"
+                                                                Margin="6 0 0 0"
+                                                                VerticalAlignment="Center">
+                                                        <Ellipse x:Name="Dot1"
+                                                                 Width="5"
+                                                                 Height="5"
+                                                                 Fill="#999"
+                                                                 Margin="2 0"
+                                                                 Opacity="0.2" />
+                                                        <Ellipse x:Name="Dot2"
+                                                                 Width="5"
+                                                                 Height="5"
+                                                                 Fill="#999"
+                                                                 Margin="2 0"
+                                                                 Opacity="0.2" />
+                                                        <Ellipse x:Name="Dot3"
+                                                                 Width="5"
+                                                                 Height="5"
+                                                                 Fill="#999"
+                                                                 Margin="2 0"
+                                                                 Opacity="0.2" />
+                                                    </StackPanel>
+                                                </StackPanel>
+                                            </StackPanel>
+                                        </Grid>
+
+                                        <DataTemplate.Triggers>
+                                            <!-- ===== 用户消息 ===== -->
+                                            <DataTrigger Binding="{Binding IsUser}" Value="True">
+                                                <Setter TargetName="UserBubble" Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+
+                                            <!-- ===== AI 消息 ===== -->
+                                            <MultiDataTrigger>
+                                                <MultiDataTrigger.Conditions>
+                                                    <Condition Binding="{Binding IsUser}" Value="False" />
+                                                </MultiDataTrigger.Conditions>
+                                                <Setter TargetName="AiMessageGrid" Property="Visibility" Value="Visible" />
+                                            </MultiDataTrigger>
+
+                                            <!-- AI：思考中 -->
+                                            <DataTrigger Binding="{Binding IsThinking}" Value="True">
+                                                <Setter TargetName="ThinkingPanel" Property="Visibility" Value="Visible" />
+                                                <DataTrigger.EnterActions>
+                                                    <BeginStoryboard x:Name="ThinkingAnim">
+                                                        <Storyboard RepeatBehavior="Forever">
+                                                            <DoubleAnimation Storyboard.TargetName="Dot1"
+                                                                             Storyboard.TargetProperty="Opacity"
+                                                                             From="0.2" To="1"
+                                                                             Duration="0:0:0.4"
+                                                                             AutoReverse="True"
+                                                                             BeginTime="0:0:0" />
+                                                            <DoubleAnimation Storyboard.TargetName="Dot2"
+                                                                             Storyboard.TargetProperty="Opacity"
+                                                                             From="0.2" To="1"
+                                                                             Duration="0:0:0.4"
+                                                                             AutoReverse="True"
+                                                                             BeginTime="0:0:0.2" />
+                                                            <DoubleAnimation Storyboard.TargetName="Dot3"
+                                                                             Storyboard.TargetProperty="Opacity"
+                                                                             From="0.2" To="1"
+                                                                             Duration="0:0:0.4"
+                                                                             AutoReverse="True"
+                                                                             BeginTime="0:0:0.4" />
+                                                        </Storyboard>
+                                                    </BeginStoryboard>
+                                                </DataTrigger.EnterActions>
+                                                <DataTrigger.ExitActions>
+                                                    <StopStoryboard BeginStoryboardName="ThinkingAnim" />
+                                                </DataTrigger.ExitActions>
+                                            </DataTrigger>
+
+                                            <!-- AI：思考结束 -->
+                                            <DataTrigger Binding="{Binding IsThinking}" Value="False">
+                                                <Setter TargetName="ThinkingPanel" Property="Visibility" Value="Collapsed" />
+                                            </DataTrigger>
+
+                                            <!-- 有步骤时显示步骤面板 -->
+                                            <DataTrigger Binding="{Binding Steps.Count}" Value="0">
+                                                <Setter TargetName="StepsPanel" Property="Visibility" Value="Collapsed" />
+                                            </DataTrigger>
+                                        </DataTemplate.Triggers>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            </ScrollViewer>
+                    </Border>
+
+                    <!-- 底部输入区域 -->
+                    <Border VerticalAlignment="Bottom"
+                            Grid.Row="1"
+                            Grid.Column="1"
+                            Height="142"
+                            Background="White"
+                            BorderBrush="#EAEAF0"
+                            BorderThickness="1"
+                            CornerRadius="20">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="96" />
+                                <RowDefinition />
+                            </Grid.RowDefinitions>
+                            <hc:TextBox x:Name="SendTextBox"
+                                        BorderThickness="0"
+                                        FontSize="16"
+                                        Margin="16 14 16 12"
+                                        Height="70"
+                                        VerticalAlignment="Top"
+                                        TextWrapping="Wrap"
+                                        AcceptsReturn="True"
+                                        Text="{Binding SendContent,UpdateSourceTrigger=PropertyChanged}"
+                                        VerticalScrollBarVisibility="Auto"
+                                        Style="{StaticResource TextBoxExtend}"
+                                        VerticalContentAlignment="Top"
+                                        hc:InfoElement.Placeholder="尽管问..."
+                                        PreviewKeyDown="SendTextBox_PreviewKeyDown" />
+                            <StackPanel Orientation="Horizontal"
+                                        HorizontalAlignment="Right"
+                                        Grid.Row="1"
+                                        Margin="16 0">
+                                <!-- 停止按钮 -->
+                                <Button Width="34"
+                                        Height="34"
+                                        Margin="0 0 8 0"
+                                        FocusVisualStyle="{x:Null}"
+                                    
+                                        Command="{Binding StopCommand}"
+                                        Visibility="{Binding IsLoading, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                    <Button.Template>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border Background="#FF5252"
+                                                    CornerRadius="17"
+                                                    Width="34"
+                                                    Height="34">
+                                                <Rectangle Width="12"
+                                                           Height="12"
+                                                           Fill="White"
+                                                           RadiusX="2"
+                                                           RadiusY="2" />
+                                            </Border>
+                                        </ControlTemplate>
+                                    </Button.Template>
+                                </Button>
+                                <!-- 发送按钮 -->
+                                <Button Width="34"
+                                        Height="34"
+                                        Command="{Binding SendContentCommand}"
+                                        Style="{StaticResource UpCircleButtonStyle}"
+                                        Visibility="{Binding IsLoading, Converter={StaticResource InvertedBoolConverter}}" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </Border>
+        </Grid>
+    </Grid>
+</Window>

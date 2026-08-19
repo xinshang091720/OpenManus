@@ -1,0 +1,4 @@
+interface:
+  display_name: "Revit Project Delivery"
+  short_description: "从 CAD 到 Revit、IFC 与质检的一体化本地交付"
+  default_prompt: "Use $revit-project-delivery 根据目标和历史继续未完成步骤；房间流程通过官方快捷方式配置启动并绑定完成 COM/PID 检查的 AutoCAD 2020；SZ-IFC 由用户手动加载，历史确认后继续质检。"

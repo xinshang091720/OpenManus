@@ -1,0 +1,58 @@
+﻿<Application x:Class="AiConstruction.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             StartupUri="View/MainInterface/HomeInterface.xaml">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/HandyControl;component/Themes/SkinDefault.xaml" />
+                <ResourceDictionary Source="pack://application:,,,/HandyControl;component/Themes/Theme.xaml" />
+                <ResourceDictionary Source="Style/StyleResources.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+
+            <!-- ====== MarkdView 简约风格覆盖 ====== -->
+            <!-- 正文默认颜色 -->
+            <SolidColorBrush x:Key="Markdown.Foreground" Color="#333333" />
+            <SolidColorBrush x:Key="Markdown.Background" Color="Transparent" />
+
+            <!-- 粗体（MarkdView Light 主题默认 #4C63EB 蓝色 → 覆盖为深灰） -->
+            <SolidColorBrush x:Key="Markdown.Bold.Foreground" Color="#222222" />
+
+            <!-- 链接颜色 -->
+            <SolidColorBrush x:Key="Markdown.Link.Foreground" Color="#555555" />
+
+            <!-- 标题颜色 -->
+            <SolidColorBrush x:Key="Markdown.Heading.H1.Foreground" Color="#222222" />
+            <SolidColorBrush x:Key="Markdown.Heading.H1.Border" Color="#DDDDDD" />
+            <SolidColorBrush x:Key="Markdown.Heading.H2.Foreground" Color="#333333" />
+            <SolidColorBrush x:Key="Markdown.Heading.H3.Foreground" Color="#444444" />
+
+            <!-- 引用块 -->
+            <SolidColorBrush x:Key="Markdown.Quote.Background" Color="#F5F5F5" />
+            <SolidColorBrush x:Key="Markdown.Quote.Border" Color="#E0E0E0" />
+
+            <!-- 代码块 -->
+            <SolidColorBrush x:Key="Markdown.CodeBlock.Background" Color="#F0F0F0" />
+            <SolidColorBrush x:Key="Markdown.CodeBlock.Foreground" Color="#333333" />
+            <SolidColorBrush x:Key="Markdown.CodeBlock.Header.Background" Color="#E8E8E8" />
+
+            <!-- 行内代码 -->
+            <SolidColorBrush x:Key="Markdown.InlineCode.Background" Color="#EEEEEE" />
+            <SolidColorBrush x:Key="Markdown.InlineCode.Foreground" Color="#D63384" />
+
+            <!-- 语法高亮 -->
+            <SolidColorBrush x:Key="Markdown.Syntax.Default" Color="#333333" />
+            <SolidColorBrush x:Key="Markdown.Syntax.Comment" Color="#999999" />
+            <SolidColorBrush x:Key="Markdown.Syntax.String" Color="#666666" />
+            <SolidColorBrush x:Key="Markdown.Syntax.Function" Color="#555555" />
+            <SolidColorBrush x:Key="Markdown.Syntax.ControlKeyword" Color="#444444" />
+            <SolidColorBrush x:Key="Markdown.Syntax.DeclarationKeyword" Color="#444444" />
+            <SolidColorBrush x:Key="Markdown.Syntax.TypeKeyword" Color="#444444" />
+            <SolidColorBrush x:Key="Markdown.Syntax.Type" Color="#555555" />
+            <SolidColorBrush x:Key="Markdown.Syntax.Number" Color="#666666" />
+            <SolidColorBrush x:Key="Markdown.Syntax.Attribute" Color="#666666" />
+            <SolidColorBrush x:Key="Markdown.Syntax.Literal" Color="#333333" />
+            <SolidColorBrush x:Key="Markdown.Syntax.ShellCommand" Color="#555555" />
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

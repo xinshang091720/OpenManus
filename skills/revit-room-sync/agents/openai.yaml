@@ -1,0 +1,4 @@
+interface:
+  display_name: "Revit Room Sync"
+  short_description: "Preview and synchronise DWG room labels"
+  default_prompt: "Use $revit-room-sync to launch AutoCAD 2020 with its verified official shortcut configuration, verify versioned COM/PID readiness, process my DWGs serially, create and name rooms in the confirmed AR Revit model, and report the saved result path."

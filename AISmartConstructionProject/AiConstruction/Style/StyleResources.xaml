@@ -1,0 +1,304 @@
+﻿<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:converter="clr-namespace:AiConstruction.Converter">
+
+    <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
+    <converter:InvertedBoolConverter x:Key="InvertedBoolConverter" />
+
+    <!-- Markdown 链接默认样式 — 简约深灰，不再使用蓝色 -->
+    <Style TargetType="Hyperlink">
+        <Setter Property="Foreground"
+                Value="#555" />
+        <Setter Property="TextDecorations"
+                Value="None" />
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver"
+                     Value="True">
+                <Setter Property="TextDecorations"
+                        Value="Underline" />
+                <Setter Property="Foreground"
+                        Value="#333" />
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <!-- 无样式图片按钮，hover/按下变色，背景基于#F0F0F2提亮 -->
+    <Style x:Key="ImageFlatButtonStyle"
+           TargetType="Button">
+        <!-- 按钮整体可点击尺寸 24 * 24 -->
+        <Setter Property="Width"
+                Value="24" />
+        <Setter Property="Height"
+                Value="24" />
+        <Setter Property="FocusVisualStyle"
+                Value="{x:Null}" />
+        <Setter Property="WindowChrome.IsHitTestVisibleInChrome"
+                Value="True" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <!-- 外层容器：24x24 响应鼠标、承载hover背景 -->
+                    <Border x:Name="MainBorder"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            CornerRadius="4">
+                        <!-- 内边距：(24-18)/2 = 3，上下左右各3px留白，图标18x18居中 -->
+                        <ContentPresenter HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"
+                                          Margin="3" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver"
+                                 Value="True">
+                            <Setter TargetName="MainBorder"
+                                    Property="Background"
+                                    Value="#E3E3E3" />
+                        </Trigger>
+                        <Trigger Property="IsPressed"
+                                 Value="True">
+                            <Setter TargetName="MainBorder"
+                                    Property="Background"
+                                    Value="#E3E3E3" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+    <!-- 关闭叉号按钮 38*38 -->
+    <Style x:Key="CloseBtnStyle"
+           TargetType="Button">
+        <Setter Property="Width"
+                Value="44" />
+        <!-- 新增：关闭焦点虚线 -->
+        <Setter Property="FocusVisualStyle"
+                Value="{x:Null}" />
+        <Setter Property="Height"
+                Value="38" />
+        <!-- 标题栏可用，允许点击 -->
+        <Setter Property="WindowChrome.IsHitTestVisibleInChrome"
+                Value="True" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <!-- 外层44*38点击区域 -->
+                    <Border x:Name="RootBorder"
+                            Background="Transparent"
+                            BorderThickness="0">
+                        <!-- 内部13*13叉号，自动居中 -->
+                        <Grid Width="13"
+                              Height="13"
+                              HorizontalAlignment="Center"
+                              VerticalAlignment="Center">
+                            <!-- 适配13x13画布的路径数据 M1,1 L12,12 M12,1 L1,12 -->
+                            <Path x:Name="XIcon"
+                                  Data="M1,1 L12,12 M12,1 L1,12"
+                                  Stroke="#212121"
+                                  />
+                        </Grid>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <!-- 悬浮：红底白叉 -->
+                        <Trigger Property="IsMouseOver"
+                                 Value="True">
+                            <Setter TargetName="RootBorder"
+                                    Property="Background"
+                                    Value="#E81123" />
+                            <Setter TargetName="XIcon"
+                                    Property="Stroke"
+                                    Value="#FFFFFF" />
+                        </Trigger>
+                        <!-- 按下加深红色 -->
+                        <Trigger Property="IsPressed"
+                                 Value="True">
+                            <Setter TargetName="RootBorder"
+                                    Property="Background"
+                                    Value="#B90E1C" />
+                            <Setter TargetName="XIcon"
+                                    Property="Stroke"
+                                    Value="#FFFFFF" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+    <!-- 最小化按钮样式 38*38 -->
+   
+    <Style x:Key="MinBtnStyle"
+           TargetType="Button">
+        <Setter Property="Width"
+                Value="44" />
+        <!-- 新增：关闭焦点虚线 -->
+        <Setter Property="FocusVisualStyle"
+                Value="{x:Null}" />
+        <Setter Property="Height"
+                
+                Value="38" />
+        <Setter Property="WindowChrome.IsHitTestVisibleInChrome"
+                Value="True" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <!-- 外层44*38点击区域 -->
+                    <Border x:Name="RootBorder"
+                            Background="Transparent"
+                            BorderThickness="0">
+                        <!-- 内部18*18横线图标，居中放置 -->
+                        <Grid Width="13"
+                              Height="13"
+                              HorizontalAlignment="Center"
+                              VerticalAlignment="Center">
+                            <Path x:Name="MinLine"
+                                  Data="M0,9 L18,9"
+                                  Stroke="#212121"
+                                 
+                                  />
+                        </Grid>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <!-- 鼠标悬浮：浅灰底色 #F0F0F2 提亮一点 #F6F6F7 -->
+                        <Trigger Property="IsMouseOver"
+                                 Value="True">
+                            <Setter TargetName="RootBorder"
+                                    Property="Background"
+                                    Value="#E3E3E3" />
+                            <Setter TargetName="MinLine"
+                                    Property="Stroke"
+                                    Value="#212121" />
+                        </Trigger>
+                        <!-- 按下加深底色 -->
+                        <Trigger Property="IsPressed"
+                                 Value="True">
+                            <Setter TargetName="RootBorder"
+                                    Property="Background"
+                                    Value="#E3E3E3" />
+                            <Setter TargetName="MinLine"
+                                    Property="Stroke"
+                                    Value="#212121" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+    <!-- 最大化 / 还原切换按钮样式 -->
+    <Style x:Key="MaxRestoreBtnStyle"
+           TargetType="ToggleButton">
+        <Setter Property="Width"
+                Value="44" />
+        <!-- 新增：关闭焦点虚线 -->
+        <Setter Property="FocusVisualStyle"
+                Value="{x:Null}" />
+        <Setter Property="Height"
+                Value="38" />
+        <Setter Property="WindowChrome.IsHitTestVisibleInChrome"
+                Value="True" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ToggleButton">
+                    <Border x:Name="RootBorder"
+                            Background="Transparent"
+                            BorderThickness="0">
+                        <Grid Width="13"
+                              Height="13"
+                              HorizontalAlignment="Center"
+                              VerticalAlignment="Center">
+                            <!-- 默认：未最大化 单个方框 -->
+                            <Grid x:Name="SingleBoxIcon">
+                                <Path Data="M1,1 L12,1 L12,12 L1,12 Z"
+                                      Stroke="#212121"
+                                       />
+                            </Grid>
+                            <!-- 最大化才显示：右上L型线条，无左下角穿插 -->
+                            <Grid x:Name="DoubleBoxIcon"
+                                  Visibility="Collapsed">
+                                <!-- 前景完整主方框 -->
+                                <Path Data="M0,2 L10,2 L10,12 L0,12 Z"
+                                      Stroke="#212121"
+                                      />
+                                <!-- 后方仅右上两段线条，无底边/左边，不会穿插左下角 -->
+                                <Path Data="M3,0 L12,0 L12,9"
+                                      Stroke="#212121"
+                                      />
+                            </Grid>
+                        </Grid>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <!-- 悬浮底色 -->
+                        <Trigger Property="IsMouseOver"
+                                 Value="True">
+                            <Setter TargetName="RootBorder"
+                                    Property="Background"
+                                    Value="#E3E3E3" />
+                        </Trigger>
+                        <!-- 按下底色 -->
+                        <Trigger Property="IsPressed"
+                                 Value="True">
+                            <Setter TargetName="RootBorder"
+                                    Property="Background"
+                                    Value="#E3E3E3" />
+                        </Trigger>
+                        <!-- 核心：绑定窗口真实WindowState，实时切换图标，在模板内可识别TargetName -->
+                        <DataTrigger Binding="{Binding WindowState, RelativeSource={RelativeSource AncestorType=Window}}"
+                                     Value="Maximized">
+                            <Setter TargetName="SingleBoxIcon"
+                                    Property="Visibility"
+                                    Value="Collapsed" />
+                            <Setter TargetName="DoubleBoxIcon"
+                                    Property="Visibility"
+                                    Value="Visible" />
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding WindowState, RelativeSource={RelativeSource AncestorType=Window}}"
+                                     Value="Normal">
+                            <Setter TargetName="SingleBoxIcon"
+                                    Property="Visibility"
+                                    Value="Visible" />
+                            <Setter TargetName="DoubleBoxIcon"
+                                    Property="Visibility"
+                                    Value="Collapsed" />
+                        </DataTrigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+    <!-- 发送按钮样式 -->
+    <Style x:Key="UpCircleButtonStyle"
+           TargetType="Button">
+        <Setter Property="Width"
+                Value="34" />
+        <Setter Property="Height"
+                Value="34" />
+        <Setter Property="FocusVisualStyle"
+                Value="{x:Null}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Grid>
+                        <Ellipse x:Name="CircleBg"
+                                 Fill="#3D7FFF" />
+                        <Image Source="pack://application:,,,/AiConstruction;component/img/PaperPlaneRight.png"
+                               Width="18"
+                               Height="18"
+                               Stretch="Uniform" />
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver"
+                                 Value="True">
+                            <Setter TargetName="CircleBg"
+                                    Property="Fill"
+                                    Value="#66A1FF" />
+                        </Trigger>
+                        <Trigger Property="IsPressed"
+                                 Value="True">
+                            <Setter TargetName="CircleBg"
+                                    Property="Fill"
+                                    Value="#66A1FF" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+</ResourceDictionary>

@@ -1,0 +1,6 @@
+# Registered reporting standards. This file is the source of truth for the
+# Agent-facing Skill; the workflow default must remain aligned with it.
+standards:
+  - name: 深圳
+    standard_id: 109003
+    default: true

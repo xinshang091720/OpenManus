@@ -1,0 +1,12 @@
+# Build-only dependencies.  Use the verified Python 3.12 release environment.
+#
+# NumPy 2.5 is used by ezdxf during DWG room extraction.  PyInstaller 6.11
+# predates that NumPy release and can produce a frozen import layout that
+# loads NumPy's native module twice.  This does not affect source execution,
+# but makes the packaged room tools fail with "cannot load module more than
+# once per process".  Keep the packager on a release that supports the
+# current NumPy layout.
+pyinstaller==6.21.0
+# Used only by build_runtime.ps1 -Obfuscate. Nuitka compiles application
+# modules to native code, unlike PyInstaller which stores Python bytecode.
+nuitka==4.1.3

@@ -1,0 +1,13 @@
+package_version: 1.3.1
+mcp_bindings:
+  - server_id: revit_local
+    tools:
+      - revit_launch_versioned_model
+      - revit_open_project_model
+      - ensure_autocad_running
+      - revit_create_and_name_ar_rooms
+      - revit_preview_room_sync
+      - revit_apply_room_sync
+permissions:
+  filesystem: explicit_paths_and_workspace
+  network: false
