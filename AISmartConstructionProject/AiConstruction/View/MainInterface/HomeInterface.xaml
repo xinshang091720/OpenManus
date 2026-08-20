@@ -5,9 +5,10 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
         xmlns:hc="https://handyorg.github.io/handycontrol"
-        xmlns:viewmodel="clr-namespace:AiConstruction.ViewModel"
         xmlns:model="clr-namespace:AiConstruction.Model"
+        xmlns:converter="clr-namespace:AiConstruction.Converter"
         xmlns:markd="clr-namespace:MarkdView.Controls;assembly=MarkdView"
+        xmlns:viewmodel="clr-namespace:AiConstruction.ViewModel"
         d:DataContext="{d:DesignInstance Type=viewmodel:HomeInterfaceVM}"
         Title="AI智建"
         Height="800"
@@ -32,13 +33,14 @@
                 <Image Source="pack://application:,,,/AiConstruction;component/img/logo-300 1.png"
                        Width="24"
                        Height="24" />
-                <TextBlock Text="Ai智建"
+                <TextBlock Text="AI智建"
                            Foreground="#303133"
                            Margin="10 0 0 0"
                            FontSize="15"
                            VerticalAlignment="Center" />
                 <Button Margin="32 0 0 0"
                         BorderThickness="0"
+                        ToolTip="侧边栏"
                         Command="{Binding HideSidebarCommand}"
                         Style="{StaticResource ImageFlatButtonStyle}"
                         Background="Transparent">
@@ -47,15 +49,16 @@
                            Width="18"
                            Height="18" />
                 </Button>
-                <Button Margin="14 0 0 0"
+                <!--<Button Margin="14 0 0 0"
                         BorderThickness="0"
+                        ToolTip="搜索"
                         Style="{StaticResource ImageFlatButtonStyle}"
                         Background="Transparent">
                     <Image Source="pack://application:,,,/AiConstruction;component/img/MagnifyingGlass.png"
                            Stretch="Uniform"
                            Width="18"
                            Height="18" />
-                </Button>
+                </Button>-->
             </StackPanel>
             <StackPanel Margin="0 0 0 0"
                         HorizontalAlignment="Right"
@@ -75,14 +78,888 @@
         </Grid>
 
         <!-- 主体区域 -->
-        <Grid Grid.Row="1">
+        <Grid Grid.Row="1" Visibility="{Binding LoginVisib}">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="{Binding SidebarColumnWidth,UpdateSourceTrigger=PropertyChanged}" />
                 <ColumnDefinition />
             </Grid.ColumnDefinitions>
 
             <!-- 侧边栏 -->
-            <Grid Visibility="{Binding HideSidebar,UpdateSourceTrigger=PropertyChanged}" />
+            <Grid Visibility="{Binding HideSidebar,UpdateSourceTrigger=PropertyChanged}"
+                  Margin="8 12 8 0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <!-- 本地样式 -->
+                <Grid.Resources>
+                    <Style x:Key="SidebarMenuItemStyle"
+                           TargetType="Button">
+                        <Setter Property="Background"
+                                Value="Transparent" />
+                        <Setter Property="BorderThickness"
+                                Value="0" />
+                        <Setter Property="HorizontalContentAlignment"
+                                Value="Left" />
+                        <Setter Property="Padding"
+                                Value="12 8" />
+                        <Setter Property="Cursor"
+                                Value="Hand" />
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="Button">
+                                    <Border Background="{TemplateBinding Background}"
+                                            Padding="{TemplateBinding Padding}">
+                                        <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                          VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+                                    </Border>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                </Grid.Resources>
+
+                <!-- 新建任务 -->
+                <Button Style="{StaticResource ADDButtonStyle}"
+                        Command="{Binding NewConversationCommand}"
+                        Width="252"
+                        HorizontalAlignment="Left">
+                    <StackPanel Orientation="Horizontal"
+                                HorizontalAlignment="Left">
+                        <!-- 内部13*13叉号，自动居中 -->
+                        <Image Source="pack://application:,,,/AiConstruction;component/img/PlusCircle.png"
+                               Width="18"
+                               Height="18"
+                               Stretch="Uniform"
+                               HorizontalAlignment="Left"
+                               VerticalAlignment="Center" />
+                        <TextBlock  Text="新建对话"
+                                    Foreground="#303133"
+                                    FontSize="14"
+                                   
+                                    VerticalAlignment="Center"
+                                    Margin="8 0 0 0" />
+                    </StackPanel>
+
+                </Button>
+                <!--中台 -->
+                <Button Style="{StaticResource ADDButtonStyle}"
+                        Width="252"
+                        Grid.Row="1"
+                        HorizontalAlignment="Left">
+                    <StackPanel Orientation="Horizontal"
+                                HorizontalAlignment="Left">
+                        <!-- 内部13*13叉号，自动居中 -->
+                        <Image Source="pack://application:,,,/AiConstruction;component/img/CirclesFour.png"
+                               Width="18"
+                               Height="18"
+                               Stretch="Uniform"
+                               HorizontalAlignment="Left"
+                               VerticalAlignment="Center" />
+                        <TextBlock  Text="Agent中台"
+                                    Foreground="#303133"
+                                    FontSize="14"
+                                    VerticalAlignment="Center"
+                                    Margin="8 0 0 0" />
+                    </StackPanel>
+
+                </Button>
+                <!--工具 -->
+                <Button Style="{StaticResource ADDButtonStyle}"
+                        Width="252"
+                        Grid.Row="2"
+                        HorizontalAlignment="Left">
+                    <StackPanel Orientation="Horizontal"
+                                HorizontalAlignment="Left">
+                        <!-- 内部13*13叉号，自动居中 -->
+                        <Image Source="pack://application:,,,/AiConstruction;component/img/Wrench.png"
+                               Width="18"
+                               Height="18"
+                               Stretch="Uniform"
+                               HorizontalAlignment="Left"
+                               VerticalAlignment="Center" />
+                        <TextBlock  Text="工具"
+                                    Foreground="#303133"
+                                    FontSize="14"
+                                    VerticalAlignment="Center"
+                                    Margin="8 0 0 0" />
+                    </StackPanel>
+
+                </Button>
+                <!--连接器 -->
+                <Button Style="{StaticResource ADDButtonStyle}"
+                        Width="252"
+                        Grid.Row="3"
+                        HorizontalAlignment="Left">
+                    <StackPanel Orientation="Horizontal"
+                                HorizontalAlignment="Left">
+                        <!-- 内部13*13叉号，自动居中 -->
+                        <Image Source="pack://application:,,,/AiConstruction;component/img/PlugsConnected.png"
+                               Width="18"
+                               Height="18"
+                               Stretch="Uniform"
+                               HorizontalAlignment="Left"
+                               VerticalAlignment="Center" />
+                        <TextBlock  Text="连接器"
+                                    Foreground="#303133"
+                                    FontSize="14"
+                                    VerticalAlignment="Center"
+                                    Margin="8 0 0 0" />
+                    </StackPanel>
+
+                </Button>
+                <!--项目 -->
+                <Button Style="{StaticResource ADDButtonStyle}"
+                        Width="252"
+                        Grid.Row="4"
+                        HorizontalAlignment="Left">
+                    <StackPanel Orientation="Horizontal"
+                                HorizontalAlignment="Left">
+                        <!-- 内部13*13叉号，自动居中 -->
+                        <Image Source="pack://application:,,,/AiConstruction;component/img/Folder.png"
+                               Width="18"
+                               Height="18"
+                               Stretch="Uniform"
+                               HorizontalAlignment="Left"
+                               VerticalAlignment="Center" />
+                        <TextBlock  Text="项目"
+                                    Foreground="#303133"
+                                    FontSize="14"
+                                    VerticalAlignment="Center"
+                                    Margin="8 0 0 0" />
+                    </StackPanel>
+
+                </Button>
+
+                <!-- 分隔线 + 任务列表标题 -->
+                <Grid Grid.Row="5"
+                      Margin="0 16 0 8">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <Border Grid.Row="0"
+                            BorderBrush="#E4E7ED"
+                            BorderThickness="0 0 0 1"
+                            Margin="0 0 0 0"
+                            HorizontalAlignment="Left" />
+                     <!--任务列表-->
+                    <StackPanel Grid.Row="1"
+                                Margin="0 16 0 0"
+                                HorizontalAlignment="Left">
+                      
+                        <Button Command="{Binding ToggleTaskListCommand}"
+                                HorizontalAlignment="Left"
+                                Width="250"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                FocusVisualStyle="{x:Null}"
+                                HorizontalContentAlignment="Left">
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border x:Name="Container"
+                                            CornerRadius="8"
+                                            Background="Transparent">
+                                        <ContentPresenter VerticalAlignment="Center"
+                                                          HorizontalAlignment="Left" />
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver"
+                                                 Value="True">
+                                            <Setter TargetName="Container"
+                                                    Property="Background"
+                                                    Value="#E8E9ED" />
+                                        </Trigger>
+                                        <Trigger Property="IsFocused"
+                                                 Value="True">
+                                            <Setter TargetName="Container"
+                                                    Property="Background"
+                                                    Value="#E8E9ED" />
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Button.Template>
+
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="{Binding TaskTitle}"
+                                           FontSize="14"
+                                           VerticalAlignment="Center">
+
+
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Foreground"
+                                                    Value="#909399" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}"
+                                                             Value="True">
+                                                    <Setter Property="Foreground"
+                                                            Value="#303133" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding IsFocused, RelativeSource={RelativeSource AncestorType=Button}}"
+                                                             Value="True">
+                                                    <Setter Property="Foreground"
+                                                            Value="Black" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+
+                                <Path Stretch="Uniform"
+                                      Width="10"
+                                      Height="10"
+                                      Margin="5 0 0 0"
+                                      StrokeThickness="1.5"
+                                      StrokeStartLineCap="Round"
+                                      StrokeEndLineCap="Round">
+                                    <Path.Style>
+                                        <Style TargetType="Path">
+                                         
+                                            <Setter Property="Data"
+                                                    Value="M 2,2 L 6,6 L 2,10" />
+                                            <Setter Property="Stroke"
+                                                    Value="#909399" />
+                                            <Style.Triggers>
+                                              
+                                                <DataTrigger Binding="{Binding IsTaskListExpanded}"
+                                                             Value="True">
+                                                    <Setter Property="Data"
+                                                            Value="M 2,3 L 6,7 L 10,3" />
+                                                </DataTrigger>
+                                             
+                                                <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}"
+                                                             Value="True">
+                                                    <Setter Property="Stroke"
+                                                            Value="Black" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding IsFocused, RelativeSource={RelativeSource AncestorType=Button}}"
+                                                             Value="True">
+                                                    <Setter Property="Stroke"
+                                                            Value="Black" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Path.Style>
+                                </Path>
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal"
+                                HorizontalAlignment="Right"
+                                Grid.Row="1"
+                                Margin="0 16 5 0">
+                        <Image Source="pack://application:,,,/AiConstruction;component/img/Funnel.png"
+                               Width="18"
+                               Height="18"
+                               Stretch="Uniform"
+                               HorizontalAlignment="Left"
+                               VerticalAlignment="Center" />
+                    </StackPanel>
+                   
+                  
+
+                    <ScrollViewer Grid.Row="2"
+                                  Margin="0 5 0 0"
+                                  VerticalScrollBarVisibility="Auto"
+                                  Visibility="{Binding IsTaskListExpanded, Converter={converter:BoolToVisibilityConverter}}">
+                        <ItemsControl ItemsSource="{Binding GroupTaskHistories}"
+                                      FocusVisualStyle="{x:Null}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type model:GroupHistory}">
+                                    <Button  Height="30"
+                                             HorizontalAlignment="Left"
+                                             Width="242"
+                                             Background="Transparent"
+                                             BorderThickness="0"
+                                             Click="GroupHistoryItem_Click"
+                                             FocusVisualStyle="{x:Null}"
+                                             HorizontalContentAlignment="Left">
+                                        <Button.Template>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border x:Name="Container"
+                                                        CornerRadius="6"
+                                                        Background="Transparent">
+                                                    <ContentPresenter VerticalAlignment="Center"
+                                                                      HorizontalAlignment="Left" />
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver"
+                                                             Value="True">
+                                                        <Setter TargetName="Container"
+                                                                Property="Background"
+                                                                Value="#E8E9ED" />
+                                                    </Trigger>
+                                                    <Trigger Property="IsFocused"
+                                                             Value="True">
+                                                        <Setter TargetName="Container"
+                                                                Property="Background"
+                                                                Value="#E8E9ED" />
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Button.Template>
+                                        <TextBlock Text="{Binding Title}"
+                                                   Foreground="#303133"
+                                                   FontSize="13"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   TextWrapping="NoWrap"
+                                                   VerticalAlignment="Center"
+                                                   ToolTip="{Binding Title}"
+                                                   Margin="8 0 0 0" />
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                    <!-- 空间列表 -->
+                    <StackPanel Grid.Row="3"
+                                Margin="0 16 0 0"
+                                HorizontalAlignment="Left">
+                        <!-- 展开折叠按钮 -->
+                        <Button Command="{Binding ToggleSpaceListCommand}"
+                                HorizontalAlignment="Left"
+                                Width="250"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                FocusVisualStyle="{x:Null}"
+                                HorizontalContentAlignment="Left">
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border x:Name="Container"
+                                            CornerRadius="8"
+                                            Background="Transparent">
+                                        <ContentPresenter VerticalAlignment="Center"
+                                                          HorizontalAlignment="Left" />
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver"
+                                                 Value="True">
+                                            <Setter TargetName="Container"
+                                                    Property="Background"
+                                                    Value="#E8E9ED" />
+                                        </Trigger>
+                                        <Trigger Property="IsPressed"
+                                                 Value="True">
+                                            <Setter TargetName="Container"
+                                                    Property="Background"
+                                                    Value="#E8E9ED" />
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Button.Template>
+
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="{Binding SpaceTitle}"
+                                           FontSize="14"
+                                           VerticalAlignment="Center">
+
+
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Foreground"
+                                                    Value="#909399" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}"
+                                                             Value="True">
+                                                    <Setter Property="Foreground"
+                                                            Value="#303133" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding IsPressed, RelativeSource={RelativeSource AncestorType=Button}}"
+                                                             Value="True">
+                                                    <Setter Property="Foreground"
+                                                            Value="Black" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+
+                                <!-- FontAwesome箭头，完美支持Foreground变色 -->
+                                <Path Stretch="Uniform"
+                                      Width="10"
+                                      Height="10"
+                                      Margin="5 0 0 0"
+                                      StrokeThickness="1.5"
+                                      StrokeStartLineCap="Round"
+                                      StrokeEndLineCap="Round">
+                                    <Path.Style>
+                                        <Style TargetType="Path">
+                                            <!-- 默认向右 > -->
+                                            <Setter Property="Data"
+                                                    Value="M 2,2 L 6,6 L 2,10" />
+                                            <Setter Property="Stroke"
+                                                    Value="#909399" />
+                                            <Style.Triggers>
+                                                <!-- 展开时向下 v -->
+                                                <DataTrigger Binding="{Binding IsSpaceExpanded}"
+                                                             Value="True">
+                                                    <Setter Property="Data"
+                                                            Value="M 2,3 L 6,7 L 10,3" />
+                                                </DataTrigger>
+                                                <!-- 悬停变色 -->
+                                                <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}"
+                                                             Value="True">
+                                                    <Setter Property="Stroke"
+                                                            Value="Black" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding IsPressed, RelativeSource={RelativeSource AncestorType=Button}}"
+                                                             Value="True">
+                                                    <Setter Property="Stroke"
+                                                            Value="Black" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Path.Style>
+                                </Path>
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal"
+                                HorizontalAlignment="Right"
+                                Grid.Row="3"
+                                Margin="0 16 5 0">
+                        <Image Source="pack://application:,,,/AiConstruction;component/img/Funnel.png"
+                               Width="18"
+                               Height="18"
+                               Stretch="Uniform"
+                               HorizontalAlignment="Left"
+                               VerticalAlignment="Center" />
+                    </StackPanel>
+                    <!-- 空间列表（按 SavePath 分组树形折叠） -->
+                    <ScrollViewer Grid.Row="4"
+                                  Margin="0 5 0 0"
+                                  VerticalScrollBarVisibility="Auto"
+                                  Visibility="{Binding IsSpaceExpanded, Converter={converter:BoolToVisibilityConverter}}">
+                        <ItemsControl ItemsSource="{Binding GroupHistoryNodes}"
+                                      FocusVisualStyle="{x:Null}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type model:GroupHistoryNode}">
+                                    <StackPanel>
+                                        <!-- ========== 分组头（有 SavePath 的工作空间） ========== -->
+                                        <StackPanel x:Name="GroupPanel"
+                                                    Visibility="Collapsed">
+                                            <ToggleButton IsChecked="{Binding IsExpanded, Mode=TwoWay}"
+                                                          Width="252"
+                                                          Height="30"
+                                                          HorizontalAlignment="Left"
+                                                          Background="Transparent"
+                                                          BorderThickness="0"
+                                                          FocusVisualStyle="{x:Null}"
+                                                          HorizontalContentAlignment="Left">
+                                                <ToggleButton.Template>
+                                                    <ControlTemplate TargetType="ToggleButton">
+                                                        <Border x:Name="Container"
+                                                                CornerRadius="6"
+                                                                Background="Transparent">
+                                                            <ContentPresenter VerticalAlignment="Center"
+                                                                              HorizontalAlignment="Left" />
+                                                        </Border>
+                                                        <ControlTemplate.Triggers>
+                                                            <Trigger Property="IsMouseOver"
+                                                                     Value="True">
+                                                                <Setter TargetName="Container"
+                                                                        Property="Background"
+                                                                        Value="#E8E9ED" />
+                                                            </Trigger>
+                                                            <Trigger Property="IsFocused"
+                                                                     Value="True">
+                                                                <Setter TargetName="Container"
+                                                                        Property="Background"
+                                                                        Value="#E8E9ED" />
+                                                            </Trigger>
+                                                        </ControlTemplate.Triggers>
+                                                    </ControlTemplate>
+                                                </ToggleButton.Template>
+                                                <Grid Width="232">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <Image Grid.Column="0"
+                                                           Source="pack://application:,,,/AiConstruction;component/img/FolderOpen.png"
+                                                           Width="18"
+                                                           Margin="5 0 0 0"
+                                                           Height="18"
+                                                           Stretch="Uniform"
+                                                           VerticalAlignment="Center" />
+                                                    <TextBlock Grid.Column="1"
+                                                               Text="{Binding DisplayPath}"
+                                                               FontSize="14"
+                                                               Foreground="#303133"
+                                                               Margin="4 0 0 0"
+                                                               VerticalAlignment="Center"
+                                                               ToolTip="{Binding SavePath}"
+                                                               TextTrimming="CharacterEllipsis"></TextBlock>
+                                                    <!-- 展开/折叠箭头 -->
+                                                    <Path Grid.Column="2"
+                                                          Stretch="Uniform"
+                                                          Width="10"
+                                                          Height="10"
+                                                          Margin="8 0 0 0"
+                                                          StrokeThickness="1.5"
+                                                          StrokeStartLineCap="Round"
+                                                          StrokeEndLineCap="Round"
+                                                          VerticalAlignment="Center">
+                                                        <Path.Style>
+                                                            <Style TargetType="Path">
+                                                                <!-- 默认向右 > -->
+                                                                <Setter Property="Data"
+                                                                        Value="M 2,2 L 6,6 L 2,10" />
+                                                                <Setter Property="Stroke"
+                                                                        Value="#909399" />
+                                                                <Style.Triggers>
+                                                                    <!-- 展开时向下 v；折叠时向右 > -->
+                                                                    <DataTrigger Binding="{Binding IsChecked, RelativeSource={RelativeSource AncestorType=ToggleButton}}"
+                                                                                 Value="True">
+                                                                        <Setter Property="Data"
+                                                                                Value="M 2,3 L 6,7 L 10,3" />
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding IsChecked, RelativeSource={RelativeSource AncestorType=ToggleButton}}"
+                                                                                 Value="False">
+                                                                        <Setter Property="Data"
+                                                                                Value="M 2,2 L 6,6 L 2,10" />
+                                                                    </DataTrigger>
+                                                                    <!-- 悬停变色 -->
+                                                                    <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=ToggleButton}}"
+                                                                                 Value="True">
+                                                                        <Setter Property="Stroke"
+                                                                                Value="Black" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+
+                                                        </Path.Style>
+                                                    </Path>
+                                                </Grid>
+                                            </ToggleButton>
+
+                                            <!-- 子项列表（展开时显示） -->
+                                            <ItemsControl Visibility="{Binding IsExpanded, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                                          ItemsSource="{Binding Children}"
+                                                          Margin="12 5 0 0"
+                                                          FocusVisualStyle="{x:Null}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate DataType="{x:Type model:GroupHistory}">
+                                                        <Button  Height="30"
+                                                                HorizontalAlignment="Left"
+                                                                Width="242"
+                                                                Background="Transparent"
+                                                                BorderThickness="0"
+                                                                 Click="GroupHistoryItem_Click"
+                                                                FocusVisualStyle="{x:Null}"
+                                                                HorizontalContentAlignment="Left">
+                                                            <Button.Template>
+                                                                <ControlTemplate TargetType="Button">
+                                                                    <Border x:Name="Container"
+                                                                            CornerRadius="6"
+                                                                            Background="Transparent">
+                                                                        <ContentPresenter VerticalAlignment="Center"
+                                                                                          HorizontalAlignment="Left" />
+                                                                    </Border>
+                                                                    <ControlTemplate.Triggers>
+                                                                        <Trigger Property="IsMouseOver"
+                                                                                 Value="True">
+                                                                            <Setter TargetName="Container"
+                                                                                    Property="Background"
+                                                                                    Value="#E8E9ED" />
+                                                                        </Trigger>
+                                                                        <Trigger Property="IsFocused"
+                                                                                 Value="True">
+                                                                            <Setter TargetName="Container"
+                                                                                    Property="Background"
+                                                                                    Value="#E8E9ED" />
+                                                                        </Trigger>
+                                                                    </ControlTemplate.Triggers>
+                                                                </ControlTemplate>
+                                                            </Button.Template>
+                                                            <TextBlock Text="{Binding Title}"
+                                                                       Foreground="#303133"
+                                                                       FontSize="13"
+                                                                       TextTrimming="CharacterEllipsis"
+                                                                       TextWrapping="NoWrap"
+                                                                       VerticalAlignment="Center"
+                                                                       ToolTip="{Binding Title}"
+                                                                       Margin="8 0 0 0" />
+                                                        </Button>
+
+                                                      
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </StackPanel>
+
+                                        <!-- ========== 叶子节点（无 SavePath 的单条对话） ========== -->
+                                        <Border x:Name="LeafPanel"
+                                                Visibility="Collapsed"
+                                                Width="252"
+                                                Height="36"
+                                                Background="Transparent"
+                                                CornerRadius="6"
+                                                Cursor="Hand"
+                                                MouseLeftButtonDown="GroupHistoryItem_Click">
+                                            <TextBlock Text="{Binding Item.Title}"
+                                                       Foreground="#303133"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       TextWrapping="NoWrap"
+                                                       VerticalAlignment="Center"
+                                                       ToolTip="{Binding Item.Title}"
+                                                       Margin="5 0 0 0" />
+                                        </Border>
+                                    </StackPanel>
+                                    <DataTemplate.Triggers>
+                                        <!-- 分组节点 → 显示分组面板 -->
+                                        <DataTrigger Binding="{Binding IsGroup}"
+                                                     Value="True">
+                                            <Setter TargetName="GroupPanel"
+                                                    Property="Visibility"
+                                                    Value="Visible" />
+                                        </DataTrigger>
+                                        <!-- 叶子节点 → 显示叶子面板 -->
+                                        <DataTrigger Binding="{Binding IsGroup}"
+                                                     Value="False">
+                                            <Setter TargetName="LeafPanel"
+                                                    Property="Visibility"
+                                                    Value="Visible" />
+                                        </DataTrigger>
+                                    </DataTemplate.Triggers>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                  
+                   
+                 
+                </Grid>
+
+
+                <!-- 底部用户信息 -->
+                <Grid Grid.Row="6"
+                      Margin="0 12"
+                      Height="44">
+
+                    <ToggleButton Style="{StaticResource OutButtonStyle}"
+                            Width="170"
+                            Margin="0 0 0 0"
+                            CommandParameter="{Binding RelativeSource={RelativeSource Self}}"
+                            Command="{Binding SeleteUserNameCommand}"
+                            Grid.Row="2"
+                            HorizontalAlignment="Left">
+                        <StackPanel Orientation="Horizontal"
+                                    HorizontalAlignment="Left">
+                            <!-- 内部13*13叉号，自动居中 -->
+                   
+                                <Image Source="pack://application:,,,/AiConstruction;component/img/Avatar.png"
+                                       Margin="5 0 0 0"
+                                       Width="30"
+                                       Height="30"
+                                       Stretch="Uniform"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center" />
+                          
+                            <TextBlock  Text="{Binding UserName}"
+                                        Foreground="#303133"
+                                        FontSize="14"
+                                        VerticalAlignment="Center"
+                                        Margin="8 0 0 0" />
+                        </StackPanel>
+
+                    </ToggleButton>
+                     <!--点击名称弹出-->
+                    <Popup IsOpen="{Binding IsUserNamePopupOpen}"
+                           PlacementTarget="{Binding ClickUserNameButton,UpdateSourceTrigger=PropertyChanged}"
+                           Placement="Top"
+                           Name="popupUser"
+                           HorizontalOffset="0"
+                           VerticalOffset="2"
+                           StaysOpen="False"
+                           Width="170"
+                           Height="170">
+                        <Border Background="#F0F0F2">
+                            <Border Background="White"
+                                    BorderBrush="#E0E0E5"
+                                    BorderThickness="1"
+                                    CornerRadius="8">
+                                <StackPanel Orientation="Vertical"
+                                            Margin="8 8">
+                               
+                                    <Button Style="{StaticResource ADDButtonStyle}"
+                                            Width="150"
+                                         
+                                            Margin="0 0 0 0"
+                                            HorizontalAlignment="Left">
+                                        <StackPanel Orientation="Horizontal"
+                                                    HorizontalAlignment="Left">
+                                            <!-- 内部13*13叉号，自动居中 -->
+                                            <Image Source="pack://application:,,,/AiConstruction;component/img/Avatar.png"
+                                                   Width="20"
+                                                   Margin="8 0 0 0"
+                                                   Height="20"
+                                                   Stretch="Uniform"
+                                                   HorizontalAlignment="Left"
+                                                   VerticalAlignment="Center" />
+                                            <TextBlock  Text="{Binding UserName}"
+                                                        Foreground="#303133"
+                                                        FontSize="14"
+                                                        VerticalAlignment="Center"
+                                                        Margin="8 0 0 0" />
+                                        </StackPanel>
+
+                                    </Button>
+                                    <Border BorderBrush="#EAEAF0"
+                                            BorderThickness="1"
+                                            Height="1" />
+                         
+                                    <!--<Button Style="{StaticResource ADDButtonStyle}"
+                                            Width="150"
+                                            Command="{Binding SeleteFolderPathCommand}"
+                                            Margin="0 0 0 0"
+                                            HorizontalAlignment="Left">
+                                        <StackPanel Orientation="Horizontal"
+                                                    HorizontalAlignment="Left">
+                                            --><!-- 内部13*13叉号，自动居中 --><!--
+                                            <Image Source="pack://application:,,,/AiConstruction;component/img/GearSix.png"
+                                                   Width="20"
+                                                   Margin="8 0 0 0"
+                                                   Height="20"
+                                                   Stretch="Uniform"
+                                                   HorizontalAlignment="Left"
+                                                   VerticalAlignment="Center" />
+                                            <TextBlock  Text="设置"
+                                                        Foreground="#303133"
+                                                        FontSize="14"
+                                                        VerticalAlignment="Center"
+                                                        Margin="8 0 0 0" />
+                                        </StackPanel>
+
+                                    </Button>-->
+
+                                    <Button Style="{StaticResource ADDButtonStyle}"
+                                            Width="150"
+                                            
+                                            Margin="0 0 0 0"
+                                            HorizontalAlignment="Left">
+                                        <StackPanel Orientation="Horizontal"
+                                                    HorizontalAlignment="Left">
+                                            <!-- 内部13*13叉号，自动居中 -->
+                                            <Image Source="pack://application:,,,/AiConstruction;component/img/Question.png"
+                                                   Width="18"
+                                                   Margin="8 0 0 0"
+                                                   Height="18"
+                                                   Stretch="Uniform"
+                                                   HorizontalAlignment="Left"
+                                                   VerticalAlignment="Center" />
+                                            <TextBlock  Text="问题反馈"
+                                                        Foreground="#303133"
+                                                        FontSize="14"
+                                                        VerticalAlignment="Center"
+                                                        Margin="8 0 0 0" />
+                                        </StackPanel>
+
+                                    </Button>
+                                    <Button Style="{StaticResource ADDButtonStyle}"
+                                            Width="150"
+                                            Command="{Binding CheckUpdatesCommand}"
+                                            Margin="0 0 0 0"
+                                            HorizontalAlignment="Left">
+                                        <StackPanel Orientation="Horizontal"
+                                                    HorizontalAlignment="Left">
+                                            <!-- 内部13*13叉号，自动居中 -->
+                                            <Image Source="pack://application:,,,/AiConstruction;component/img/ArrowsClockwise.png"
+                                                   Width="20"
+                                                   Margin="8 0 0 0"
+                                                   Height="20"
+                                                   Stretch="Uniform"
+                                                   HorizontalAlignment="Left"
+                                                   VerticalAlignment="Center" />
+                                            <TextBlock  Text="检查更新"
+                                                        Foreground="#303133"
+                                                        FontSize="14"
+                                                        VerticalAlignment="Center"
+                                                        Margin="8 0 0 0" />
+                                        </StackPanel>
+
+                                    </Button>
+                                    <Border BorderBrush="#EAEAF0"
+                                            BorderThickness="1"
+                                            Height="1" />
+                                    <Button Style="{StaticResource ADDButtonStyle}"
+                                            Width="150"
+                                            Command="{Binding SignOutCommand}"
+                                            Margin="0 0 0 0"
+                                            CommandParameter="{Binding RelativeSource={RelativeSource FindAncestor,AncestorType={x:Type Window}}}"
+                                            HorizontalAlignment="Left">
+                                        <StackPanel Orientation="Horizontal"
+                                                    HorizontalAlignment="Left">
+                                            <!-- 内部13*13叉号，自动居中 -->
+                                            <Image Source="pack://application:,,,/AiConstruction;component/img/SignOut.png"
+                                                   Width="20"
+                                                   Margin="8 0 0 0"
+                                                   Height="20"
+                                                   Stretch="Uniform"
+                                                   HorizontalAlignment="Left"
+                                                   VerticalAlignment="Center" />
+                                            <TextBlock  Text="退出登录"
+                                                        Foreground="#303133"
+                                                        FontSize="14"
+                                                        VerticalAlignment="Center"
+                                                        Margin="8 0 0 0" />
+                                        </StackPanel>
+
+                                    </Button>
+                                </StackPanel>
+                            </Border>
+                        </Border>
+                    </Popup>
+                    <!--<Ellipse Width="28"
+           Height="28">
+      <Image Source="pack://application:,,,/AiConstruction;component/img/logo-300 1.png"
+             Width="24"
+             Height="24" />
+  </Ellipse>-->
+               
+                    <!--<StackPanel Orientation="Horizontal"
+                                HorizontalAlignment="Right"
+                                VerticalAlignment="Center">
+                        <Button Margin="0 0 0 0"
+                                BorderThickness="0"
+                                ToolTip="消息中心"
+                                Command="{Binding HideSidebarCommand}"
+                                Style="{StaticResource ImageFlatButtonStyle}"
+                                Background="Transparent">
+                            <Image Source="pack://application:,,,/AiConstruction;component/img/Bell.png"
+                                   Stretch="Uniform"
+                                   Width="18"
+                                   Height="18" />
+                        </Button>
+
+                        <Button Margin="12 0 0 0"
+                                ToolTip="设置"
+                                BorderThickness="0"
+                                Command="{Binding HideSidebarCommand}"
+                                Style="{StaticResource ImageFlatButtonStyle}"
+                                Background="Transparent">
+                            <Image Source="pack://application:,,,/AiConstruction;component/img/GearSix.png"
+                                   Stretch="Uniform"
+                                   Width="18"
+                                   Height="18" />
+                        </Button>
+
+
+                    </StackPanel>-->
+
+                </Grid>
+            </Grid>
 
             <!-- 聊天主区域 -->
             <Border Grid.Column="1"
@@ -98,20 +975,26 @@
                                       Direction="135" />
                 </Border.Effect>
                 <Grid HorizontalAlignment="Stretch"
-                      Margin="0 30 0 30">
+                      Margin="0 0 0 30">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="8*" />
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
                     <Grid.RowDefinitions>
+                        <RowDefinition  Height="40" />
                         <RowDefinition />
-                        <RowDefinition Height="217" />
+                        <RowDefinition Height="70"/>
+                        <RowDefinition Height="175" />
                     </Grid.RowDefinitions>
+                    <StackPanel Orientation="Horizontal" Grid.ColumnSpan="3">
+                        <TextBlock Grid.Row="0" FontSize="16" Foreground="#191919" FontWeight="Black"
+                                   Text="{Binding DialogueTitle}" VerticalAlignment="Center" Margin="20 20 0 0" />
+                    </StackPanel>
 
                     <!-- 初始标题 -->
                     <StackPanel Orientation="Vertical"
-                                Grid.Row="0"
+                                Grid.Row="1"
                                 Grid.Column="1"
                                 VerticalAlignment="Center"
                                 Visibility="{Binding InitializeTitie,UpdateSourceTrigger=PropertyChanged}">
@@ -127,7 +1010,7 @@
 
                     <!-- 对话气泡区域 -->
                     <Border Visibility="{Binding DialogueContent}"
-                            Grid.Row="0"
+                            Grid.Row="1"
                             FocusVisualStyle="{x:Null}"
                             Grid.Column="1"
                             BorderThickness="0"
@@ -143,14 +1026,20 @@
                                     <DataTemplate DataType="{x:Type model:ChatMessage}">
                                         <DataTemplate.Resources>
                                             <Style TargetType="FlowDocumentScrollViewer">
-                                                <Setter Property="BorderThickness" Value="0" />
+                                                <Setter Property="BorderThickness"
+                                                        Value="0" />
                                                 <Setter Property="FocusVisualStyle"
                                                         Value="{x:Null}" />
-                                                <Setter Property="BorderBrush" Value="Transparent" />
-                                                <Setter Property="IsToolBarVisible" Value="False" />
-                                                <Setter Property="Background" Value="Transparent" />
-                                                <Setter Property="VerticalScrollBarVisibility" Value="Disabled" />
-                                                <Setter Property="HorizontalScrollBarVisibility" Value="Disabled" />
+                                                <Setter Property="BorderBrush"
+                                                        Value="Transparent" />
+                                                <Setter Property="IsToolBarVisible"
+                                                        Value="False" />
+                                                <Setter Property="Background"
+                                                        Value="Transparent" />
+                                                <Setter Property="VerticalScrollBarVisibility"
+                                                        Value="Disabled" />
+                                                <Setter Property="HorizontalScrollBarVisibility"
+                                                        Value="Disabled" />
                                             </Style>
                                         </DataTemplate.Resources>
 
@@ -170,14 +1059,29 @@
                                                          Background="Transparent"
                                                          TextWrapping="Wrap"
                                                          FontSize="14"
-                                                      
                                                          Foreground="#303133"
                                                          CaretBrush="#303133" />
                                             </Border>
 
                                             <!-- ========== AI 消息 ========== -->
                                             <StackPanel x:Name="AiMessageGrid"
-                                                        Visibility="Collapsed"  FocusVisualStyle="{x:Null}">
+                                                        Visibility="Collapsed"
+                                                        FocusVisualStyle="{x:Null}">
+                                                <!-- AI 回复头部：图标 + 名称 -->
+                                                <StackPanel Orientation="Horizontal"
+                                                            Margin="0 0 0 8">
+                                                    <Image Source="pack://application:,,,/AiConstruction;component/img/logo-300 1.png"
+                                                           Stretch="Uniform"
+                                                           Width="24"
+                                                           VerticalAlignment="Center"
+                                                           Height="24" />
+                                                    <TextBlock Text="AI智建"
+                                                               Margin="10 0 0 0"
+                                                               
+                                                               FontSize="14"
+                                                               Foreground="#303133"
+                                                               VerticalAlignment="Center" />
+                                                </StackPanel>
                                                 <!-- 工具步骤列表（可折叠，默认整体折叠） -->
                                                 <Border x:Name="StepsPanel"
                                                         BorderThickness="0"
@@ -207,10 +1111,13 @@
                                                                        Margin="8 0 0 0">
                                                                 <TextBlock.Style>
                                                                     <Style TargetType="TextBlock">
-                                                                        <Setter Property="Text" Value="▶" />
+                                                                        <Setter Property="Text"
+                                                                                Value="▶" />
                                                                         <Style.Triggers>
-                                                                            <DataTrigger Binding="{Binding IsStepsExpanded}" Value="True">
-                                                                                <Setter Property="Text" Value="∨" />
+                                                                            <DataTrigger Binding="{Binding IsStepsExpanded}"
+                                                                                         Value="True">
+                                                                                <Setter Property="Text"
+                                                                                        Value="∨" />
                                                                             </DataTrigger>
                                                                         </Style.Triggers>
                                                                     </Style>
@@ -252,10 +1159,13 @@
                                                                                    Text="{Binding Content}">
                                                                             <TextBlock.Style>
                                                                                 <Style TargetType="TextBlock">
-                                                                                    <Setter Property="Visibility" Value="Visible" />
+                                                                                    <Setter Property="Visibility"
+                                                                                            Value="Visible" />
                                                                                     <Style.Triggers>
-                                                                                        <DataTrigger Binding="{Binding Content}" Value="">
-                                                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                                                        <DataTrigger Binding="{Binding Content}"
+                                                                                                     Value="">
+                                                                                            <Setter Property="Visibility"
+                                                                                                    Value="Collapsed" />
                                                                                         </DataTrigger>
                                                                                     </Style.Triggers>
                                                                                 </Style>
@@ -273,7 +1183,6 @@
                                                                       Content="{Binding Content}"
                                                                       Theme="Auto"
                                                                       EnableStreaming="False"
-                                                                      
                                                                       UseTransparentCanvas="True"
                                                                       BorderThickness="0"
                                                                       BorderBrush="Transparent"
@@ -317,39 +1226,51 @@
 
                                         <DataTemplate.Triggers>
                                             <!-- ===== 用户消息 ===== -->
-                                            <DataTrigger Binding="{Binding IsUser}" Value="True">
-                                                <Setter TargetName="UserBubble" Property="Visibility" Value="Visible" />
+                                            <DataTrigger Binding="{Binding IsUser}"
+                                                         Value="True">
+                                                <Setter TargetName="UserBubble"
+                                                        Property="Visibility"
+                                                        Value="Visible" />
                                             </DataTrigger>
 
                                             <!-- ===== AI 消息 ===== -->
                                             <MultiDataTrigger>
                                                 <MultiDataTrigger.Conditions>
-                                                    <Condition Binding="{Binding IsUser}" Value="False" />
+                                                    <Condition Binding="{Binding IsUser}"
+                                                               Value="False" />
                                                 </MultiDataTrigger.Conditions>
-                                                <Setter TargetName="AiMessageGrid" Property="Visibility" Value="Visible" />
+                                                <Setter TargetName="AiMessageGrid"
+                                                        Property="Visibility"
+                                                        Value="Visible" />
                                             </MultiDataTrigger>
 
                                             <!-- AI：思考中 -->
-                                            <DataTrigger Binding="{Binding IsThinking}" Value="True">
-                                                <Setter TargetName="ThinkingPanel" Property="Visibility" Value="Visible" />
+                                            <DataTrigger Binding="{Binding IsThinking}"
+                                                         Value="True">
+                                                <Setter TargetName="ThinkingPanel"
+                                                        Property="Visibility"
+                                                        Value="Visible" />
                                                 <DataTrigger.EnterActions>
                                                     <BeginStoryboard x:Name="ThinkingAnim">
                                                         <Storyboard RepeatBehavior="Forever">
                                                             <DoubleAnimation Storyboard.TargetName="Dot1"
                                                                              Storyboard.TargetProperty="Opacity"
-                                                                             From="0.2" To="1"
+                                                                             From="0.2"
+                                                                             To="1"
                                                                              Duration="0:0:0.4"
                                                                              AutoReverse="True"
                                                                              BeginTime="0:0:0" />
                                                             <DoubleAnimation Storyboard.TargetName="Dot2"
                                                                              Storyboard.TargetProperty="Opacity"
-                                                                             From="0.2" To="1"
+                                                                             From="0.2"
+                                                                             To="1"
                                                                              Duration="0:0:0.4"
                                                                              AutoReverse="True"
                                                                              BeginTime="0:0:0.2" />
                                                             <DoubleAnimation Storyboard.TargetName="Dot3"
                                                                              Storyboard.TargetProperty="Opacity"
-                                                                             From="0.2" To="1"
+                                                                             From="0.2"
+                                                                             To="1"
                                                                              Duration="0:0:0.4"
                                                                              AutoReverse="True"
                                                                              BeginTime="0:0:0.4" />
@@ -362,37 +1283,251 @@
                                             </DataTrigger>
 
                                             <!-- AI：思考结束 -->
-                                            <DataTrigger Binding="{Binding IsThinking}" Value="False">
-                                                <Setter TargetName="ThinkingPanel" Property="Visibility" Value="Collapsed" />
+                                            <DataTrigger Binding="{Binding IsThinking}"
+                                                         Value="False">
+                                                <Setter TargetName="ThinkingPanel"
+                                                        Property="Visibility"
+                                                        Value="Collapsed" />
                                             </DataTrigger>
 
                                             <!-- 有步骤时显示步骤面板 -->
-                                            <DataTrigger Binding="{Binding Steps.Count}" Value="0">
-                                                <Setter TargetName="StepsPanel" Property="Visibility" Value="Collapsed" />
+                                            <DataTrigger Binding="{Binding Steps.Count}"
+                                                         Value="0">
+                                                <Setter TargetName="StepsPanel"
+                                                        Property="Visibility"
+                                                        Value="Collapsed" />
                                             </DataTrigger>
                                         </DataTemplate.Triggers>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
-                            </ScrollViewer>
+                        </ScrollViewer>
                     </Border>
+                    <!-- 底部输入区域  加选择空间-->
+                    <Border Background="#F0F0F2"
+                            CornerRadius="22"
+                            Grid.Row="3"
+                            Visibility="{Binding InitializeTitie,UpdateSourceTrigger=PropertyChanged}"
+                            Margin="0 0 0 0 "
+                            Grid.Column="1">
+                        <StackPanel Orientation="Vertical">
+                            <!-- 底部输入区域-->
+                            <Border VerticalAlignment="Top"
+                                    Grid.Row="2"
+                                    Margin="3 3 3 0"
+                                    Background="White"
+                                    BorderBrush="#EAEAF0"
+                                    BorderThickness="1"
+                                    CornerRadius="20">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="96" />
+                                        <RowDefinition />
+                                        <RowDefinition  Height="5"/>
+                                    </Grid.RowDefinitions>
+                                    <hc:TextBox x:Name="SendTextBox"
+                                                BorderThickness="0"
+                                                FontSize="16"
+                                                Margin="16 14 16 12"
+                                                Height="70"
+                                                VerticalAlignment="Top"
+                                                TextWrapping="Wrap"
+                                                AcceptsReturn="True"
+                                                Text="{Binding SendContent,UpdateSourceTrigger=PropertyChanged}"
+                                                VerticalScrollBarVisibility="Auto"
+                                                Style="{StaticResource TextBoxExtend}"
+                                                VerticalContentAlignment="Top"
+                                                hc:InfoElement.Placeholder="尽管问..."
+                                                PreviewKeyDown="SendTextBox_PreviewKeyDown" />
+                                    <StackPanel Orientation="Horizontal"
+                                                HorizontalAlignment="Right"
+                                                Grid.Row="1"
+                                                Margin="16 0 16 0">
 
-                    <!-- 底部输入区域 -->
+                                        <!-- 停止按钮-->
+                                        <Button Width="34"
+                                                Height="34"
+                                                Margin="0 0 8 0"
+                                                ToolTip="停止"
+                                                FocusVisualStyle="{x:Null}"
+                                                Command="{Binding StopCommand}"
+                                                Visibility="{Binding IsLoading, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                            <Button.Template>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Border x:Name="PART_Border"
+                                                            Background="#F0F0F2"
+                                                            CornerRadius="17"
+                                                            Width="34"
+                                                            Height="34">
+                                                        <Rectangle Width="12"
+                                                                   Height="12"
+                                                                   Fill="White"
+                                                                   RadiusX="2"
+                                                                   RadiusY="2" />
+                                                    </Border>
+
+                                                    <ControlTemplate.Triggers>
+                                                        <!-- 鼠标悬停 -->
+                                                        <Trigger Property="IsMouseOver"
+                                                                 Value="True">
+                                                            <Setter TargetName="PART_Border"
+                                                                    Property="Background"
+                                                                    Value="#E0E0E3" />
+                                                        </Trigger>
+                                                        <!-- 鼠标按下效果（可选） -->
+                                                        <Trigger Property="IsFocused"
+                                                                 Value="True">
+                                                            <Setter TargetName="PART_Border"
+                                                                    Property="Background"
+                                                                    Value="#D0D0D4" />
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Button.Template>
+
+                                        </Button>
+                                        <!-- 发送按钮-->
+                                        <Button Width="34"
+                                                Height="34"
+                                                Command="{Binding SendContentCommand}"
+                                                Style="{StaticResource UpCircleButtonStyle}"
+                                                Visibility="{Binding IsLoading, Converter={StaticResource InvertedBoolConverter}}">
+                                            <Button.ToolTip>
+                                                <TextBlock Text="发送" />
+                                            </Button.ToolTip>
+                                        </Button>
+                                    </StackPanel>
+                                   <!-- 添加文件按钮-->
+                                    <!--<Button Width="34"
+                                    Grid.Row="1"
+                                    Height="34"
+                                    Margin="16 0 0 0"
+                                    HorizontalAlignment="Left"
+                                    Command="{Binding FileSpaceCommand}"
+                                    BorderBrush="#ACACAC"
+                                    CommandParameter="{Binding RelativeSource={RelativeSource Self}}"
+                                   
+                                    Style="{StaticResource FileButtonStyle}">
+                                <Button.ToolTip>
+                                    <TextBlock Text="可添加文件与文件夹" />
+                                </Button.ToolTip>
+
+                            </Button>-->
+                                </Grid>
+                            </Border>
+                            <ToggleButton  Command="{Binding SeleltSpaceCommand}"
+                                           HorizontalAlignment="Left"
+                                          
+                                           CommandParameter="{Binding RelativeSource={RelativeSource Self}}"
+                                           Height="32"
+                                           Margin="25 5 0 0"
+                                           Foreground="#909399"
+                                           Background="Transparent"
+                                           BorderThickness="0"
+                                           FocusVisualStyle="{x:Null}"
+                                           HorizontalContentAlignment="Left">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border x:Name="Container"
+                                                CornerRadius="8"
+                                                Background="Transparent">
+                                            <ContentPresenter VerticalAlignment="Center"
+                                                              HorizontalAlignment="Left" />
+                                        </Border>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                                <StackPanel Orientation="Horizontal">
+                                    <Image Source="pack://application:,,,/AiConstruction;component/img/FolderOpen.png"
+                                           Width="18"
+                                           Height="18"
+                                           Stretch="Uniform"
+                                           HorizontalAlignment="Left"
+                                           VerticalAlignment="Center" />
+                                    <TextBlock Text="{Binding SutSpaceName ,UpdateSourceTrigger=PropertyChanged}"
+                                               FontSize="14"
+                                               Margin="4 0 0 0"
+                                               VerticalAlignment="Center">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Foreground"
+                                                        Value="#909399" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=ToggleButton}}"
+                                                                 Value="True">
+                                                        <Setter Property="Foreground"
+                                                                Value="#303133" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding DataContext.IsPopupOpen, RelativeSource={RelativeSource AncestorType=ToggleButton}}"
+                                                                 Value="True">
+                                                        <Setter Property="Foreground"
+                                                                Value="Black" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                  
+                                    <Path Stretch="Uniform"
+                                          Width="10"
+                                          Height="10"
+                                          Margin="5 0 0 0"
+                                          StrokeThickness="1.5"
+                                          StrokeStartLineCap="Round"
+                                          StrokeEndLineCap="Round">
+                                        <Path.Style>
+                                            <Style TargetType="Path">
+ 
+                                                <Setter Property="Data"
+                                                        Value="M 2,3 L 6,7 L 10,3" />
+                                                <Setter Property="Stroke"
+                                                        Value="#909399" />
+                                                <Style.Triggers>
+                                                    
+                                                    <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=ToggleButton}}"
+                                                                 Value="True">
+                                                        <Setter Property="Stroke"
+                                                                Value="Black" />
+                                                    </DataTrigger>
+
+                                                    <DataTrigger Binding="{Binding DataContext.IsPopupOpen, RelativeSource={RelativeSource AncestorType=ToggleButton}}"
+                                                                 Value="True">
+                                                        <Setter Property="Data"
+                                                                Value="M 2,7 L 6,3 L 10,7" />
+                                                        <Setter Property="Stroke"
+                                                                Value="Black" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding DataContext.IsPopupOpen, RelativeSource={RelativeSource AncestorType=ToggleButton}}"
+                                                                 Value="Flase">
+                                                        <Setter Property="Data"
+                                                                Value="M 2,3 L 6,7 L 10,3" />
+                                                        <Setter Property="Stroke"
+                                                                Value="#909399" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Path.Style>
+                                    </Path>
+                                </StackPanel>
+                            </ToggleButton>
+                        </StackPanel>
+                    </Border>
+                    <!-- 底部输入区域  隐藏选择空间-->
                     <Border VerticalAlignment="Bottom"
-                            Grid.Row="1"
-                            Grid.Column="1"
-                            Height="142"
+                            Grid.Row="3"
+                            Visibility="{Binding DialogueContent,UpdateSourceTrigger=PropertyChanged}"
+                            Margin="3 3 3 0"
                             Background="White"
                             BorderBrush="#EAEAF0"
                             BorderThickness="1"
+                            Grid.Column="1"
                             CornerRadius="20">
                         <Grid>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="96" />
                                 <RowDefinition />
+                                <RowDefinition  Height="5" />
                             </Grid.RowDefinitions>
-                            <hc:TextBox x:Name="SendTextBox"
-                                        BorderThickness="0"
+                            <hc:TextBox BorderThickness="0"
                                         FontSize="16"
                                         Margin="16 14 16 12"
                                         Height="70"
@@ -408,18 +1543,19 @@
                             <StackPanel Orientation="Horizontal"
                                         HorizontalAlignment="Right"
                                         Grid.Row="1"
-                                        Margin="16 0">
+                                        Margin="16 0 16 0">
                                 <!-- 停止按钮 -->
                                 <Button Width="34"
                                         Height="34"
                                         Margin="0 0 8 0"
+                                        ToolTip="停止"
                                         FocusVisualStyle="{x:Null}"
-                                    
                                         Command="{Binding StopCommand}"
                                         Visibility="{Binding IsLoading, Converter={StaticResource BooleanToVisibilityConverter}}">
                                     <Button.Template>
                                         <ControlTemplate TargetType="Button">
-                                            <Border Background="#FF5252"
+                                            <Border x:Name="PART_Border"
+                                                    Background="#F0F0F2"
                                                     CornerRadius="17"
                                                     Width="34"
                                                     Height="34">
@@ -429,20 +1565,143 @@
                                                            RadiusX="2"
                                                            RadiusY="2" />
                                             </Border>
+
+                                            <ControlTemplate.Triggers>
+                                                <!-- 鼠标悬停 -->
+                                                <Trigger Property="IsMouseOver"
+                                                         Value="True">
+                                                    <Setter TargetName="PART_Border"
+                                                            Property="Background"
+                                                            Value="#E0E0E3" />
+                                                </Trigger>
+                                                <!-- 鼠标按下效果（可选） -->
+                                                <Trigger Property="IsFocused"
+                                                         Value="True">
+                                                    <Setter TargetName="PART_Border"
+                                                            Property="Background"
+                                                            Value="#D0D0D4" />
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
                                         </ControlTemplate>
                                     </Button.Template>
+                                   
                                 </Button>
                                 <!-- 发送按钮 -->
                                 <Button Width="34"
                                         Height="34"
                                         Command="{Binding SendContentCommand}"
                                         Style="{StaticResource UpCircleButtonStyle}"
-                                        Visibility="{Binding IsLoading, Converter={StaticResource InvertedBoolConverter}}" />
+                                        Visibility="{Binding IsLoading, Converter={StaticResource InvertedBoolConverter}}">
+                                    <Button.ToolTip>
+                                        <TextBlock Text="发送" />
+                                    </Button.ToolTip>
+                                </Button>
                             </StackPanel>
                         </Grid>
                     </Border>
+                    <Popup IsOpen="{Binding IsPopupOpen,UpdateSourceTrigger=PropertyChanged}"
+                           PlacementTarget="{Binding ClickTargetBtn,UpdateSourceTrigger=PropertyChanged}"
+                           Placement="Top"
+                           Name="popup"
+                           HorizontalOffset="0"
+                           VerticalOffset="2"
+                           StaysOpen="False"
+                           Width="170"
+                           Height="100">
+                        <Border Background="White">
+                            <Border Background="White"
+                                    BorderBrush="#E0E0E5"
+                                    BorderThickness="1"
+                                    CornerRadius="8">
+                                <StackPanel Orientation="Vertical"
+                                            Margin="8 8">
+                                    <!--文件 -->
+                                    <Button Style="{StaticResource ADDButtonStyle}"
+                                            Width="150"
+                                            CommandParameter="{Binding RelativeSource={RelativeSource FindAncestor,AncestorType={x:Type Window}}}"
+                                            Command="{Binding CreateWorkSpaceCommand}"
+                                            HorizontalAlignment="Left">
+                                        <StackPanel Orientation="Horizontal"
+                                                    HorizontalAlignment="Left">
+                                            <!-- 内部13*13叉号，自动居中 -->
+                                            <TextBlock Text="+" Margin="8 -3 0 0"
+                                                       FontSize="22" 
+                                                       Foreground="#303133"  VerticalAlignment="Center"/>
+                                            <TextBlock  Text="新建工作空间"
+                                                        Foreground="#303133"
+                                                        FontSize="14"
+                                                        VerticalAlignment="Center"
+                                                        Margin="8 0 0 0" />
+                                        </StackPanel>
+
+                                    </Button>
+                                    <!--文件地址 -->
+                                    <Button Style="{StaticResource ADDButtonStyle}"
+                                            Width="150"
+                                            Command="{Binding SeleteFolderPathCommand}"
+                                            Margin="0 5 0 0"
+                                            HorizontalAlignment="Left">
+                                        <StackPanel Orientation="Horizontal"
+                                                    HorizontalAlignment="Left">
+                                            <!-- 内部13*13叉号，自动居中 -->
+                                            <Image Source="pack://application:,,,/AiConstruction;component/img/Folder.png"
+                                                   Width="18"
+                                                   Margin="8 0 0 0"
+                                                   Height="18"
+                                                   Stretch="Uniform"
+                                                   HorizontalAlignment="Left"
+                                                   VerticalAlignment="Center" />
+                                            <TextBlock  Text="选择文件夹"
+                                                        Foreground="#303133"
+                                                        FontSize="14"
+                                                        VerticalAlignment="Center"
+                                                        Margin="8 0 0 0" />
+                                        </StackPanel>
+
+                                    </Button>
+                                </StackPanel>
+                            </Border>
+                        </Border>
+                    </Popup>
                 </Grid>
             </Border>
         </Grid>
+        
+        <!--未登录-->
+        <Grid VerticalAlignment="Center"
+              Visibility="{Binding NotLoginVisib,UpdateSourceTrigger=PropertyChanged}"
+              HorizontalAlignment="Center" Grid.Row="1">
+            <StackPanel Orientation="Vertical">
+                <Image Source="pack://application:,,,/AiConstruction;component/img/人物.png"
+                       Width="120"
+                       Height="180"
+                       Stretch="Uniform"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center" />
+                <TextBlock Text="AI智建，筑就未来"
+                           Foreground="#303133"
+                           VerticalAlignment="Center"
+                           Margin="0 28 0 0"
+                           HorizontalAlignment="Center"
+                           FontSize="32" />
+                <Button Content="登录"
+                        Foreground="White"
+                        Style="{StaticResource PrimaryBlueButtonStyle}"
+                        Width="180"
+                        Margin="0 32 0 0"
+                        Height="40"
+                        Command="{Binding LoginCommand}"
+                        CommandParameter="{Binding RelativeSource={RelativeSource FindAncestor,AncestorType={x:Type Window}}}"
+                         />
+            </StackPanel>
+         
+        </Grid>
+        
+        <!-- 遮罩层：弹窗时显示 -->
+        <Border x:Name="MaskLayer"
+                Grid.RowSpan="3"
+                Background="#80000000"
+                Visibility="Collapsed"
+                Panel.ZIndex="99" />
     </Grid>
 </Window>

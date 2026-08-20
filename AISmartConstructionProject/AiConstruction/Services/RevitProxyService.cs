@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -16,8 +17,46 @@ namespace AiConstruction.Services
     /// </summary>
     public class RevitProxyService : IDisposable
     {
-        /// <summary>代理固定端口号</summary>
-        public const int ProxyPort = 50000;
+        /// <summary>代理端口号（首次访问时从操作系统动态分配空闲端口）</summary>
+        private static int? _proxyPort;
+        private static readonly object _portInitLock = new();
+
+        /// <summary>获取代理端口（首次访问时自动分配，后续复用）</summary>
+        public static int ProxyPort
+        {
+            get
+            {
+                if (!_proxyPort.HasValue)
+                {
+                    lock (_portInitLock)
+                    {
+                        if (!_proxyPort.HasValue)
+                            _proxyPort = GetAvailablePort();
+                    }
+                }
+                return _proxyPort.Value;
+            }
+        }
+
+        /// <summary>让操作系统分配一个空闲的 TCP 端口</summary>
+        private static int GetAvailablePort()
+        {
+            var listener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
+            try
+            {
+                listener.Start();
+                int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+                listener.Stop();
+                LogHelper.Info($"[代理服务] 系统分配空闲端口: {port}");
+                return port;
+            }
+            catch (Exception ex)
+            {
+                LogHelper.Error($"[代理服务] 获取空闲端口失败: {ex.Message}");
+                throw;
+            }
+        }
+
         private HttpListener? _listener;
         private CancellationTokenSource? _cts;
         private Task? _listenTask;
@@ -38,7 +77,8 @@ namespace AiConstruction.Services
             _detector = detector;
             _forwardClient = new HttpClient
             {
-                Timeout = TimeSpan.FromMinutes(5)
+                // 最大合法允许值：int.MaxValue -1 毫秒 ≈24天，业务完全等价无限制
+                Timeout = TimeSpan.FromMilliseconds(int.MaxValue - 1)
             };
 
             // 当所有 Revit 退出时，清除端口缓存
@@ -55,25 +95,56 @@ namespace AiConstruction.Services
             };
         }
 
-        /// <summary>启动代理监听</summary>
+        /// <summary>启动代理监听（动态端口，无冲突风险）</summary>
         public void Start()
         {
-            try
+            int maxRetries = 3;
+            for (int attempt = 1; attempt <= maxRetries; attempt++)
             {
-                _cts = new CancellationTokenSource();
-                _listener = new HttpListener();
-                // 仅供当前桌面端与 Runtime 使用；绝不绑定到局域网地址。
-                _listener.Prefixes.Add($"http://localhost:{ProxyPort}/api/");
-                _listener.Prefixes.Add($"http://127.0.0.1:{ProxyPort}/api/");
-                _listener.Start();
+                int port = ProxyPort;
 
-                _listenTask = Task.Run(() => ListenLoop(_cts.Token));
+                try
+                {
+                    _cts = new CancellationTokenSource();
+                    _listener = new HttpListener();
+                    _listener.Prefixes.Add($"http://localhost:{port}/api/");
+                    _listener.Prefixes.Add($"http://127.0.0.1:{port}/api/");
+                    _listener.Start();
 
-                LogHelper.Info($"[代理服务] 启动成功，监听: {ProxyUrl}/api/");
-            }
-            catch (Exception ex)
-            {
-                LogHelper.Error($"[代理服务] 启动失败: {ex.Message}");
+                    _listenTask = Task.Run(() => ListenLoop(_cts.Token));
+
+                    LogHelper.Info($"[代理服务] 启动成功，端口: {port} (动态分配)");
+                    return;
+                }
+                catch (HttpListenerException ex)
+                {
+                    LogHelper.Warn($"[代理服务] 端口 {port} 启动失败 (错误码: {ex.ErrorCode})，第 {attempt} 次尝试");
+
+                    // 释放当前端口，下次 GetAvailablePort 重新分配
+                    lock (_portInitLock)
+                    {
+                        _proxyPort = null;
+                    }
+
+                    _listener?.Close();
+                    _listener = null;
+                    _cts?.Cancel();
+                    _cts?.Dispose();
+                    _cts = null;
+
+                    if (attempt < maxRetries)
+                    {
+                        Thread.Sleep(100);
+                        continue;
+                    }
+
+                    LogHelper.Error($"[代理服务] 启动失败，已尝试 {maxRetries} 次: {ex.Message}");
+                }
+                catch (Exception ex)
+                {
+                    LogHelper.Error($"[代理服务] 启动失败: {ex.Message}");
+                    break;
+                }
             }
         }
 
@@ -107,7 +178,6 @@ namespace AiConstruction.Services
             // 打开模型操作：不使用缓存，强制走 ActivePort（确保新实例能被路由到）
             if (IsOpenModelPath(path))
             {
-                LogHelper.Info("[代理服务] OpenRevitFile 请求，使用 ActivePort（不读缓存）");
                 return _detector.ActivePort;
             }
 
@@ -121,7 +191,6 @@ namespace AiConstruction.Services
                         var stillAlive = _detector.ActiveInstances.Values.Contains(_lastSuccessfulPort.Value);
                         if (stillAlive)
                         {
-                            LogHelper.Info($"[代理服务] 使用模型绑定端口: {_lastSuccessfulPort.Value}");
                             return _lastSuccessfulPort.Value;
                         }
                         else

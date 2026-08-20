@@ -1,4 +1,5 @@
 using AiConstruction.Api;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -7,9 +8,11 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using static System.Net.Mime.MediaTypeNames;
 
 namespace AiConstruction.Services
 {
@@ -23,11 +26,6 @@ namespace AiConstruction.Services
         private string? _sessionToken;
         private int _port;
         private bool _disposed;
-
-        private static readonly string RuntimeExeDir = Path.Combine(
-            AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "BeeSync.AgentRuntime");
-
-        private static readonly string RuntimeExePath = Path.Combine(RuntimeExeDir, "BeeSync.AgentRuntime.exe");
 
         // 按文档规范的目录
         private static readonly string ConfigDir = Path.Combine(
@@ -47,56 +45,29 @@ namespace AiConstruction.Services
 
         /// <summary>当前会话 Token</summary>
         public string? SessionToken => _sessionToken;
-
+        public AccountApiClient client = new();
 
         /// <summary>Runtime 进程意外退出时触发</summary>
         public event EventHandler? ProcessExited;
 
         public RuntimeManager()
         {
-            // 解析 exe 实际路径：开发时从 Debug/bin 向上找，发布时在同级目录
-            var debugExe = Path.GetFullPath(RuntimeExePath);
-            if (File.Exists(debugExe))
-            {
-                LogHelper.Info($"[运行管理器] 找到 exe: {debugExe}");
-            }
-            else
-            {
-                // 回退：查找桌面和项目根目录
-                var alt1 = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
-                    "BeeSync.AgentRuntime", "BeeSync.AgentRuntime.exe");
-                var alt2 = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
-                    "AISmartConstructionProject", "BeeSync.AgentRuntime", "BeeSync.AgentRuntime.exe");
-
-                if (File.Exists(alt1))
-                    LogHelper.Info($"[运行管理器] 找到 exe (alt1): {alt1}");
-                else if (File.Exists(alt2))
-                    LogHelper.Info($"[运行管理器] 找到 exe (alt2): {alt2}");
-            }
         }
 
         private static string GetExePath()
         {
-            // 逐级尝试
-            var paths = new[]
-            {
-                RuntimeExePath,
-                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
-                    "BeeSync.AgentRuntime", "BeeSync.AgentRuntime.exe"),
-                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
-                    "AISmartConstructionProject", "BeeSync.AgentRuntime", "BeeSync.AgentRuntime.exe"),
-            };
+            // 只找程序同目录下的 BeeSync.AgentRuntime 文件夹
+            var exeDir = Path.GetDirectoryName(Process.GetCurrentProcess().MainModule!.FileName)!;
+            var targetPath = Path.Combine(exeDir, "BeeSync.AgentRuntime", "BeeSync.AgentRuntime.exe");
+            var full = Path.GetFullPath(targetPath);
 
-            foreach (var p in paths)
-            {
-                var full = Path.GetFullPath(p);
-                if (File.Exists(full))
-                    return full;
-            }
+            LogHelper.Info($"[运行管理器] 查找 Runtime exe: {full}");
+            if (File.Exists(full))
+                return full;
 
-            throw new FileNotFoundException("找不到 BeeSync.AgentRuntime.exe", RuntimeExePath);
+            throw new FileNotFoundException(
+                $"找不到 BeeSync.AgentRuntime.exe，期望路径: {full}\n请将 BeeSync.AgentRuntime 文件夹放到程序同目录下。",
+                full);
         }
 
         /// <summary>动态分配空闲端口</summary>
@@ -160,6 +131,17 @@ namespace AiConstruction.Services
         /// <summary>启动 Runtime 进程（阻塞直到健康检查通过或超时）</summary>
         public async Task<bool> StartAsync(CancellationToken ct = default)
         {
+            // 清理之前残留的 BeeSync.AgentRuntime 进程（防止强制关闭后文件被占用）
+            foreach (var proc in Process.GetProcessesByName("BeeSync.AgentRuntime"))
+            {
+                try
+                {
+                    LogHelper.Info($"[运行管理器] 清理残留进程 PID: {proc.Id}");
+                    proc.Kill(entireProcessTree: true);
+                    proc.WaitForExit(1000);
+                }
+                catch { }
+            }
             if (_disposed) return false;
             if (_process != null && !_process.HasExited)
             {
@@ -173,9 +155,10 @@ namespace AiConstruction.Services
             {
                 // 0. 生成随机 Token
                 _sessionToken = GenerateToken();
+                //_sessionToken = "dev-test-token-20260722";
+             
                 ApiConfig.AuthToken = _sessionToken;
                 LogHelper.Info($"[运行管理器] Token 已生成 (len={_sessionToken.Length})");
-
                 // 1. 动态端口
                 _port = FindAvailablePort();
                 LogHelper.Info($"[运行管理器] 分配端口: {_port}");
@@ -183,9 +166,6 @@ namespace AiConstruction.Services
                 // 2. 获取 exe 路径和工作目录
                 var exePath = GetExePath();
                 var exeDir = Path.GetDirectoryName(exePath)!;
-                LogHelper.Info($"[运行管理器] exe: {exePath}");
-                LogHelper.Info($"[运行管理器] 工作目录: {exeDir}");
-
                 // 3. 创建必需目录
                 EnsureDir(ConfigDir, "配置目录");
                 EnsureDir(DataDir, "数据目录");
@@ -217,7 +197,7 @@ namespace AiConstruction.Services
                     "--runtime-version", "1.0.0",
                 };
 
-                LogHelper.Info($"[运行管理器] 启动命令: {exePath} {string.Join(" ", args)}");
+             //   LogHelper.Info($"[运行管理器] 启动命令: {exePath} {string.Join(" ", args)}");
 
                 // 6. 构建 ProcessStartInfo
                 var psi = new ProcessStartInfo
@@ -234,11 +214,14 @@ namespace AiConstruction.Services
 
                 foreach (var a in args)
                     psi.ArgumentList.Add(a);
-
+                //新增
+                psi.Environment["BEESYNC_LLM_MODEL"] = "qwen3.7-max";
+                psi.Environment["BEESYNC_LLM_BASE_URL"] = "https://llm-31571n47vq8n3p94.cn-beijing.maas.aliyuncs.com/compatible-mode/v1";
                 // 注入环境变量（敏感信息，不写入命令行）
                 psi.Environment["OPENMANUS_RUNTIME_TOKEN"] = _sessionToken;
-
+                var key=  client.GetKey();
                 var llmApiKey = ApiConfig.LlmApiKey;
+                 llmApiKey = key.Data.KeyValue;
                 if (!string.IsNullOrEmpty(llmApiKey))
                 {
                     psi.Environment["BEESYNC_LLM_API_KEY"] = llmApiKey;
@@ -254,6 +237,7 @@ namespace AiConstruction.Services
 
                 // 禁用浏览器功能（环境变量控制）
                 psi.Environment["BEESYNC_ENABLE_BROWSER"] = "0";
+              
 
                 // 7. 启动进程
                 _process = new Process { StartInfo = psi, EnableRaisingEvents = true };
@@ -285,20 +269,20 @@ namespace AiConstruction.Services
                 LogHelper.Info($"[运行管理器] 进程已启动, PID: {_process.Id}");
 
                 // 8. 健康检查循环
-                var ready = await WaitForHealthCheckAsync(ct);
-                if (ready)
-                {
+                //var ready = await WaitForHealthCheckAsync(ct);
+                //if (ready)
+                //{
                     IsReady = true;
                     ApiConfig.BaseUrl = BaseUrl;
                     stopwatch.Stop();
                     LogHelper.Info($"[运行管理器] 启动成功 ({stopwatch.ElapsedMilliseconds}ms), 就绪地址: {BaseUrl}");
-                }
-                else
-                {
-                    LogHelper.Error($"[运行管理器] 健康检查失败, 启动耗时: {stopwatch.ElapsedMilliseconds}ms");
-                }
+                //}
+                //else
+                //{
+                //    LogHelper.Error($"[运行管理器] 健康检查失败, 启动耗时: {stopwatch.ElapsedMilliseconds}ms");
+                //}
 
-                return ready;
+                return true;
             }
             catch (Exception ex)
             {
@@ -391,9 +375,7 @@ namespace AiConstruction.Services
             var httpClient = new HttpClient
             {
                 BaseAddress = new Uri(BaseUrl),
-                // Revit 单次操作最长可运行两小时，SSE 由调用方的
-                // CancellationToken 控制生命周期，不能使用较短的总请求超时。
-                Timeout = System.Threading.Timeout.InfiniteTimeSpan
+                Timeout = TimeSpan.FromMinutes(10) // SSE 长连接需要长超时
             };
 
             if (!string.IsNullOrEmpty(_sessionToken))

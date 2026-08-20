@@ -176,7 +176,6 @@ namespace AiConstruction.Services
 
             if (newestPid != 0 && _instances.TryGetValue(newestPid, out var newestPort))
             {
-                LogHelper.Info($"[端口检测] 前台非 Revit，选择最新实例 PID={newestPid} 端口={newestPort}");
                 return newestPort;
             }
 

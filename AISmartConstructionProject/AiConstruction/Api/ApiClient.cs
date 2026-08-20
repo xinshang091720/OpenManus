@@ -5,6 +5,7 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using System.Windows.Forms;
 
 namespace AiConstruction.Api
 {
@@ -80,6 +81,42 @@ namespace AiConstruction.Api
             LogHelper.Info($"[API] 创建 Run 成功: run_id={result?.RunId}, status={result?.Status}");
             return result;
         }
+
+
+        /// <summary>
+        /// 获取标题  每一组对话 根据第一条用户发送的问题生成标题
+        /// POST/api/v1/conversations/topic
+        /// </summary>
+        public async Task<CreateRunResponse?> CreateTitie(string role, string content, CancellationToken ct = default)
+        {
+            var data = new
+            {
+                messages = new[]
+    {
+        new
+        {
+            role = role,
+            content = content
+        }
+    }
+            };
+            var json = JsonSerializer.Serialize(data);
+            var josnContent = new StringContent(json, Encoding.UTF8, "application/json");
+
+            var response = await _httpClient.PostAsync("/api/v1/conversations/topic", josnContent, ct);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorBody = await response.Content.ReadAsStringAsync(ct);
+                LogHelper.Error($"[API] 生成 标题 失败 ({(int)response.StatusCode}): {errorBody}");
+
+            }
+            var responseJson = await response.Content.ReadAsStringAsync(ct);
+            var result = JsonSerializer.Deserialize<CreateRunResponse>(responseJson);
+            LogHelper.Info($"[API] 生成 标题 成功: run_id={result?.Topic}");
+            return result;
+        }
+
 
         /// <summary>
         /// 步骤二：SSE 长连接订阅 Agent Run 事件

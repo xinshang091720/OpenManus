@@ -1,3 +1,4 @@
+using CommunityToolkit.Mvvm.ComponentModel;
 using System.Text.Json.Serialization;
 
 namespace AiConstruction.Model
@@ -25,9 +26,19 @@ namespace AiConstruction.Model
         [JsonPropertyName("history")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public List<HistoryMessage>? History { get; set; }
-
+        // 新增附件数组
+        [JsonPropertyName("attachments")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public List<object>? Attachments { get; set; }
     }
-
+    // 附件实体
+    public class AttachmentItem
+    {
+        [JsonPropertyName("path")]
+        public string Path { get; set; } = string.Empty;
+        [JsonPropertyName("type")]
+        public string Type { get; set; } = string.Empty;
+    }
     /// <summary>
     /// 历史消息（仅允许 user/assistant 角色）
     /// </summary>
@@ -54,6 +65,8 @@ namespace AiConstruction.Model
 
         [JsonPropertyName("status")]
         public string Status { get; set; } = string.Empty; // "queued"
+        [JsonPropertyName("topic")]
+        public string Topic { get; set; } = string.Empty; // "queued"
     }
 
     /// <summary>
@@ -127,10 +140,6 @@ namespace AiConstruction.Model
 
         [JsonPropertyName("success")]
         public bool? Success { get; set; }
-
-        /// <summary>tool_progress 事件中的累计运行秒数</summary>
-        [JsonPropertyName("elapsed_seconds")]
-        public int? ElapsedSeconds { get; set; }
     }
 
     /// <summary>
@@ -146,4 +155,272 @@ namespace AiConstruction.Model
     }
 
     #endregion
+
+    #region 账号服务 API 模型
+
+    
+    /// <summary>
+    /// 通用响应基类
+    /// </summary>
+    public class BaseResponse
+    {
+        [JsonPropertyName("code")]
+        public int Code { get; set; }
+
+        [JsonPropertyName("msg")]
+        public string Message { get; set; } = string.Empty;
+
+        public bool IsSuccess => Code == 200;
+
+      
+    }
+
+    /// <summary>
+    /// 发送验证码响应
+    /// </summary>
+    public class SendCaptchaResponse : BaseResponse
+    {
+    }
+
+    //授权码
+    public class Authorizatio: BaseResponse
+    {
+        public int data { get; set; }
+    }
+  
+
+    /// <summary>
+    /// 登录响应数据
+    /// </summary>
+    public class LoginData
+    {
+        [JsonPropertyName("key")]
+        public string KeyValue { get; set; } = string.Empty;
+
+        /// <summary>授权级别</summary>
+        [JsonPropertyName("authorise")]
+        public int Authorise { get; set; }
+
+        /// <summary>用户 ID</summary>
+        [JsonPropertyName("userId")]
+        public string UserId { get; set; } = string.Empty;
+
+        /// <summary>JWT Token</summary>
+        [JsonPropertyName("token")]
+        public string Token { get; set; } = string.Empty;
+
+        [JsonPropertyName("userName")]
+        public string UserName { get; set; } = string.Empty;
+
+
+    }
+
+    /// <summary>
+    /// 登录响应
+    /// </summary>
+    public class LoginResponse : BaseResponse
+    {
+        [JsonPropertyName("data")]
+        public LoginData? Data { get; set; }
+    }
+
+    //版本信息
+    public class VersionInformation 
+    {
+        [JsonPropertyName("releaseNumber")]
+        public string ReleaseNumber { get; set; } = string.Empty;
+        [JsonPropertyName("versionId")]
+        public int VersionId { get; set; }
+        [JsonPropertyName("versionName")]
+        //插件名称
+
+        public string VersionName { get; set; } = string.Empty;
+      
+        [JsonPropertyName("status")]
+        public string State { get; set; } =string.Empty;
+        [JsonPropertyName("remark")]
+        public string Remark { get; set; } = string.Empty;
+
+        [JsonPropertyName("applicationLinks")]
+        //链接地址
+        public string ApplicationLinks { get; set; } = string.Empty;
+    }
+
+    public class VersionInformationResponse: BaseResponse
+    {
+        [JsonPropertyName("data")]
+        public List<VersionInformation>? Data { get; set; }
+    }
+
+    /// <summary>
+    /// 本地保存的登录信息（加密后写入 login.dat）
+    /// </summary>
+    public class SavedLoginInfo
+    {
+        /// <summary>账号服务 Token</summary>
+        [JsonPropertyName("accountToken")]
+        public string AccountToken { get; set; } = string.Empty;
+
+        /// <summary>用户 ID</summary>
+        [JsonPropertyName("userId")]
+        public string UserId { get; set; } = string.Empty;
+
+        /// <summary>授权级别</summary>
+        [JsonPropertyName("authorise")]
+        public int Authorise { get; set; }
+
+        /// <summary>手机号（账号）</summary>
+        [JsonPropertyName("phone")]
+        public string Phone { get; set; } = string.Empty;
+
+        /// <summary>密码</summary>
+        [JsonPropertyName("password")]
+        public string Password { get; set; } = string.Empty;
+
+        [JsonPropertyName("userName")]
+        public string UserName { get; set; } = string.Empty;
+    }
+
+    #endregion
+
+
+    #region 对话框模型跟历史记录
+
+    // 基础返回模型，后端统一格式
+    public class ApiBaseResult<T>
+    {
+        [JsonPropertyName("code")]
+        public int Code { get; set; }
+        [JsonPropertyName("msg")]
+        public string? Msg { get; set; }
+        [JsonPropertyName("total")]
+        public long Total { get; set; }
+        [JsonPropertyName("rows")]
+        public List<T>? Rows { get; set; }
+    }
+
+    //对话组列表
+    public class GroupHistory
+    {
+        [JsonPropertyName("userId")]
+        public string UserId { get; set; } =string.Empty;
+        //对话组ID
+        [JsonPropertyName("sessionGroupId")]
+        public string SessionGroupId { get; set; } = string.Empty;
+        //标题
+        [JsonPropertyName("title")]
+        public string Title { get; set; } = string.Empty;
+        [JsonPropertyName("pin")]
+        public int Pin { get; set; }
+
+        //功能模式（1-智能问答，2-方案智能生成）
+        [JsonPropertyName("functions")]
+        public int Functions { get; set; } 
+
+        [JsonPropertyName("savePath")]
+        public string SavePath { get; set; } = string.Empty;
+    }
+
+    /// <summary>
+    /// 侧边栏树形节点（按 SavePath 分组）
+    /// </summary>
+    public partial class GroupHistoryNode : ObservableObject
+    {
+        /// <summary>叶子节点：无 SavePath 的单条对话</summary>
+        public GroupHistory? Item { get; set; }
+
+        /// <summary>分组名（SavePath 的文件夹名）</summary>
+        public string GroupName { get; set; } = string.Empty;
+
+        public string SavePath { get; set; } = string.Empty;
+
+        /// <summary>分组下的子项列表（含该 SavePath 下所有对话）</summary>
+        public List<GroupHistory> Children { get; set; } = new();
+
+        /// <summary>是否为分组节点</summary>
+        public bool IsGroup => !string.IsNullOrEmpty(GroupName);
+
+        /// <summary>展开/折叠状态</summary>
+        [ObservableProperty]
+        private bool _isExpanded = true;
+
+        /// <summary>分组头显示的路径名</summary>
+        public string DisplayPath => GroupName;
+    }
+
+    #endregion
+
+
+    #region 历史对话接口模型
+
+    /// <summary>单条历史对话记录</summary>
+    public class ChatHistoryItem
+    {
+        [JsonPropertyName("id")]
+        public int Id { get; set; }
+
+        [JsonPropertyName("userId")]
+        public string UserId { get; set; } = string.Empty;
+
+        [JsonPropertyName("chatSessionId")]
+        public string ChatSessionId { get; set; } = string.Empty;
+
+        [JsonPropertyName("sessionGroupId")]
+        public string SessionGroupId { get; set; } = string.Empty;
+
+        [JsonPropertyName("msgId")]
+        public string MsgId { get; set; } = string.Empty;
+
+        [JsonPropertyName("role")]
+        public string Role { get; set; } = string.Empty;
+
+        [JsonPropertyName("content")]
+        public string Content { get; set; } = string.Empty;
+        [JsonPropertyName("summarize")]
+        public string Summarize { get; set; } = string.Empty;
+
+
+        [JsonPropertyName("msgStatus")]
+        public string MsgStatus { get; set; } = string.Empty;
+
+        [JsonPropertyName("createTime")]
+        public long CreateTime { get; set; }
+
+        [JsonPropertyName("updateTime")]
+        public long UpdateTime { get; set; }
+
+        [JsonPropertyName("docs")]
+        public string? Docs { get; set; }
+
+        [JsonPropertyName("isVisible")]
+        public int IsVisible { get; set; }
+
+        [JsonPropertyName("files")]
+        public string? Files { get; set; }
+
+        [JsonPropertyName("functions")]
+        public int Functions { get; set; }
+
+        [JsonPropertyName("articles")]
+        public string? Articles { get; set; }
+
+        [JsonPropertyName("savePath")]
+        public string? SavePath { get; set; }
+    }
+
+    /// <summary>历史对话列表响应</summary>
+    public class ChatHistoryListResponse
+    {
+        [JsonPropertyName("msg")]
+        public string Msg { get; set; } = string.Empty;
+
+        [JsonPropertyName("code")]
+        public int Code { get; set; }
+
+        [JsonPropertyName("data")]
+        public List<ChatHistoryItem>? Data { get; set; }
+    }
+
+    #endregion
+
 }

@@ -1,0 +1,343 @@
+﻿<Window x:Class="AIContstructUpdate.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:AIContstructUpdate"
+        xmlns:viewmodel="clr-namespace:AIContstructUpdate.ViewModel"
+        d:DataContext="{d:DesignInstance Type=viewmodel:MainViewModel}"
+        mc:Ignorable="d"
+        Title="AI智建"
+        Height="229"
+        Width="500"
+        Background="Transparent"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterScreen">
+    <WindowChrome.WindowChrome>
+        <WindowChrome  UseAeroCaptionButtons="False"></WindowChrome>
+    </WindowChrome.WindowChrome>
+    <Window.Resources>
+        <!-- 滚动条禁用背景 -->
+        <SolidColorBrush x:Key="ScrollBarDisabledBackground"
+                         Color="#F4F4F4" />
+
+        <!-- 垂直滚动条 空白区域按钮 -->
+        <Style x:Key="VerticalScrollBarPageButton"
+               TargetType="{x:Type RepeatButton}">
+            <Setter Property="OverridesDefaultStyle"
+                    Value="true" />
+            <Setter Property="Background"
+                    Value="Transparent" />
+            <Setter Property="Focusable"
+                    Value="false" />
+            <Setter Property="IsTabStop"
+                    Value="false" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type RepeatButton}">
+                        <Rectangle Width="{TemplateBinding Width}"
+                                   Height="{TemplateBinding Height}"
+                                   Fill="{TemplateBinding Background}" />
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 滚动条滑块（核心：颜色、圆角、透明度） -->
+        <Style x:Key="ScrollBarThumb"
+               TargetType="{x:Type Thumb}">
+            <Setter Property="OverridesDefaultStyle"
+                    Value="true" />
+            <Setter Property="IsTabStop"
+                    Value="false" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type Thumb}">
+                        <!-- 滚动条颜色和圆角设置 -->
+                        <Rectangle Name="thumbRect"
+                                   Fill="#A0A0A0"
+                                   Opacity="0.3"
+                                   RadiusX="1"
+                                   RadiusY="1" />
+                        <!-- 鼠标拉动滚动条时的颜色 -->
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver"
+                                     Value="True">
+                                <Setter TargetName="thumbRect"
+                                        Property="Fill"
+                                        Value="#808080" />
+                                <Setter TargetName="thumbRect"
+                                        Property="Opacity"
+                                        Value="0.8" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 水平滚动条 空白区域按钮 -->
+        <Style x:Key="HorizontalScrollBarPageButton"
+               TargetType="{x:Type RepeatButton}">
+            <Setter Property="OverridesDefaultStyle"
+                    Value="true" />
+            <Setter Property="Background"
+                    Value="Transparent" />
+            <Setter Property="Focusable"
+                    Value="false" />
+            <Setter Property="IsTabStop"
+                    Value="false" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type RepeatButton}">
+                        <Rectangle Width="{TemplateBinding Width}"
+                                   Height="{TemplateBinding Height}"
+                                   Fill="{TemplateBinding Background}" />
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 滚动条总样式（宽度、背景、方向） -->
+        <Style TargetType="{x:Type ScrollBar}">
+            <Setter Property="Background"
+                    Value="Transparent" />
+            <Setter Property="Stylus.IsPressAndHoldEnabled"
+                    Value="false" />
+            <Setter Property="Stylus.IsFlicksEnabled"
+                    Value="false" />
+            <!-- 滚动条宽度 -->
+            <Setter Property="Width"
+                    Value="4" />
+            <Setter Property="MinWidth"
+                    Value="2" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type ScrollBar}">
+                        <!-- 滚动条背景色 -->
+                        <Grid x:Name="Bg"
+                              Width="4"
+                              Background="Transparent"
+                              SnapsToDevicePixels="true">
+                            <Grid.RowDefinitions>
+                                <RowDefinition />
+                            </Grid.RowDefinitions>
+                            <Track x:Name="PART_Track"
+                                   IsDirectionReversed="true"
+                                   IsEnabled="{TemplateBinding IsMouseOver}">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Command="{x:Static ScrollBar.PageUpCommand}"
+                                                  Style="{StaticResource VerticalScrollBarPageButton}" />
+                                </Track.DecreaseRepeatButton>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Command="{x:Static ScrollBar.PageDownCommand}"
+                                                  Style="{StaticResource VerticalScrollBarPageButton}" />
+                                </Track.IncreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb Style="{StaticResource ScrollBarThumb}" />
+                                </Track.Thumb>
+                            </Track>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsEnabled"
+                                     Value="false">
+                                <Setter TargetName="Bg"
+                                        Property="Background"
+                                        Value="{StaticResource ScrollBarDisabledBackground}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="Orientation"
+                         Value="Horizontal">
+                    <Setter Property="Width"
+                            Value="Auto" />
+                    <Setter Property="MinWidth"
+                            Value="0" />
+                    <Setter Property="Height"
+                            Value="4" />
+                    <Setter Property="MinHeight"
+                            Value="2" />
+                    <Setter Property="Background"
+                            Value="Transparent" />
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="{x:Type ScrollBar}">
+                                <Grid x:Name="Bg"
+                                      Background="Transparent"
+                                      SnapsToDevicePixels="true">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition />
+                                    </Grid.ColumnDefinitions>
+                                    <Track x:Name="PART_Track"
+                                           IsEnabled="{TemplateBinding IsMouseOver}">
+                                        <Track.DecreaseRepeatButton>
+                                            <RepeatButton Command="{x:Static ScrollBar.PageLeftCommand}"
+                                                          Style="{StaticResource HorizontalScrollBarPageButton}" />
+                                        </Track.DecreaseRepeatButton>
+                                        <Track.IncreaseRepeatButton>
+                                            <RepeatButton Command="{x:Static ScrollBar.PageRightCommand}"
+                                                          Style="{StaticResource HorizontalScrollBarPageButton}" />
+                                        </Track.IncreaseRepeatButton>
+                                        <Track.Thumb>
+                                            <Thumb Style="{StaticResource ScrollBarThumb}" />
+                                        </Track.Thumb>
+                                    </Track>
+                                </Grid>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsEnabled"
+                                             Value="false">
+                                        <Setter TargetName="Bg"
+                                                Property="Background"
+                                                Value="{StaticResource ScrollBarDisabledBackground}" />
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </Window.Resources>
+    <Grid Background="White">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="50" />
+            <RowDefinition />
+         
+        </Grid.RowDefinitions>
+        <Grid>
+            <StackPanel Orientation="Horizontal"
+                        VerticalAlignment="Center"
+                        Margin="20 0 0 0">
+                <Image Source="pack://application:,,,/AIContstructUpdate;component/img/logo-300 1.png"
+                       Height="24"
+                       Width="24"></Image>
+                <TextBlock Foreground="#FF303133"
+                           FontSize="16"
+                           Text="AI智建"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           Margin="10 0 0 0" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal"
+                        VerticalAlignment="Center"
+                        Margin="0 0 20 0"
+                        HorizontalAlignment="Right"
+                        Background="Transparent">
+                <Button WindowChrome.IsHitTestVisibleInChrome="True"
+                        HorizontalAlignment="Center"
+                        Command="{Binding CloseCommand}"
+                        CommandParameter="{Binding RelativeSource={RelativeSource FindAncestor,AncestorType={x:Type Window}}}"
+                        Content="×"
+                        FontSize="22"
+                        BorderThickness="0">
+                    <Button.Style>
+                        <Style TargetType="Button">
+                            <Setter Property="Foreground"
+                                    Value="Gray" />
+                            <Setter Property="Background"
+                                    Value="White" />
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="Button">
+                                        <Border Background="{TemplateBinding Background}"
+                                                BorderBrush="{TemplateBinding BorderBrush}"
+                                                BorderThickness="{TemplateBinding BorderThickness}">
+                                            <ContentPresenter HorizontalAlignment="Center"
+                                                              VerticalAlignment="Center" />
+                                        </Border>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                            <Style.Triggers>
+                                <Trigger Property="IsMouseOver"
+                                         Value="True">
+                                    <Setter Property="Foreground"
+                                            Value="Black" />
+                                    <Setter Property="Background"
+                                            Value="Transparent" />
+                                </Trigger>
+                                <Trigger Property="IsPressed"
+                                         Value="True">
+                                    <Setter Property="Foreground"
+                                            Value="Black" />
+
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+
+            </StackPanel>
+        </Grid>
+ 
+        <Grid Grid.Row="1"
+             >
+            <Grid  Margin="20 0 20 0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="20" />
+                </Grid.RowDefinitions>
+                <ScrollViewer Grid.Row="0"
+                              MaxHeight="110"
+                              VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled">
+
+                    <ItemsControl x:Name="UpdateLogItems"
+                                  Grid.Row="0"
+                                  ItemsSource="{Binding UpdateLogItems}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <BulletDecorator Margin="0,3,0,3">
+                                    <!--蓝色圆点-->
+                                    <BulletDecorator.Bullet>
+                                        <Ellipse Width="8"
+                                                 Height="8"
+                                                 Fill="#3D7FFF" />
+                                    </BulletDecorator.Bullet>
+                                    <TextBlock Text="{Binding Content}"
+                                               Margin="8 0 0 0"
+                                               FontSize="14"
+                                               TextWrapping="Wrap"
+                                               Foreground="#606266"
+                                               VerticalAlignment="Center" />
+                                </BulletDecorator>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+                <!-- 进度条 + 进度数字（居中叠加） -->
+                <Grid Grid.Row="1"
+                      VerticalAlignment="Center">
+                    <ProgressBar   Value="{Binding Progressjd,Mode=TwoWay,UpdateSourceTrigger=PropertyChanged}"
+                                   BorderThickness="0"
+                                   Width="460"
+                                   Height="7"
+                                   Background="#D9DADE"
+                                   Minimum="0"
+                                   Maximum="100">
+                        <ProgressBar.Foreground>
+                            <SolidColorBrush Color="#3D7FFF" />
+                        </ProgressBar.Foreground>
+                    </ProgressBar>
+                    <!--<TextBlock Text="{Binding ProgressNumerical,UpdateSourceTrigger=PropertyChanged}"
+                               FontSize="16"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               Foreground="Black" />-->
+                </Grid>
+                <!-- 状态文字（进度条下方） -->
+                <TextBlock Grid.Row="1"
+                           Text="{Binding StatusText}"
+                           VerticalAlignment="Center"
+                           FontSize="13"
+                           Foreground="#303133"
+                           HorizontalAlignment="Center"
+                           Margin="0 32 0 0" />
+            </Grid>
+        </Grid>
+    </Grid>
+</Window>

@@ -1,0 +1,59 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <ApplicationIcon>img\logo.ico</ApplicationIcon>
+
+    <!-- 单文件打包配置（发布时生效） -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <!-- publish 直接输出到 bin\Debug\net8.0-windows\ 或 bin\Release\net8.0-windows\ -->
+    <PublishDir>bin\$(Configuration)\net8.0-windows\</PublishDir>
+    <Version>1.0.1</Version>
+    <Company>深圳市安比科技有限公司</Company>
+    <Product>AI智建</Product>
+    <Authors>深圳市安比科技有限公司</Authors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Remove="img\logo-300 1.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="img\logo-300 1.png">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Resource>
+  </ItemGroup>
+
+  <!-- 1. 把 NuGet 包 DLL 嵌入为 EmbeddedResource，资源名 = 文件名.dll -->
+  <Target Name="EmbedReferencedAssemblies" AfterTargets="ResolveAssemblyReferences">
+    <ItemGroup>
+      <EmbeddedResource Include="@(ReferencePath)" Condition="'%(Extension)' == '.dll' AND '%(NuGetPackageId)' != ''">
+        <LogicalName>%(Filename)%(Extension)</LogicalName>
+      </EmbeddedResource>
+    </ItemGroup>
+  </Target>
+
+  <!-- 2. 阻止 NuGet DLL 复制到输出目录，触发 AssemblyResolve -->
+  <Target Name="ExcludeNuGetDllsFromCopyLocal" AfterTargets="ResolveAssemblyReferences">
+    <ItemGroup>
+      <ReferenceCopyLocalPaths Remove="@(ReferenceCopyLocalPaths)" Condition="'%(NuGetPackageId)' != '' AND '%(Extension)' == '.dll'" />
+    </ItemGroup>
+  </Target>
+
+  <!-- 3. Release 配置下 build 完成后自动 publish 单文件 exe -->
+  <Target Name="AutoPublishAfterReleaseBuild" AfterTargets="Build" Condition="'$(Configuration)' == 'Release' AND '$(SkipAutoPublish)' != 'true'">
+    <Message Text="正在自动发布单文件 exe..." Importance="high" />
+    <Exec Command="dotnet publish $(MSBuildProjectFullPath) -c $(Configuration) -r win-x64 --self-contained -nologo /p:SkipAutoPublish=true" />
+  </Target>
+
+</Project>

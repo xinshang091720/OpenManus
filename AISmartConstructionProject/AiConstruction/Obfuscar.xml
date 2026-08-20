@@ -1,0 +1,50 @@
+<?xml version='1.0'?>
+<!--
+  Obfuscar 混淆配置 = AiConstruction (.NET 8 WPF)
+  ================================================================
+  规则：
+  1. InPath / OutPath / LogFile 必须是绝对路径（Obfuscar 拒绝相对路径和 $(...) 占位符）
+  2. 只混淆 AiConstruction.dll（入口 exe 是 apphost，逻辑全在 dll 里，混淆 exe 无效）
+  3. 用 Release 构建，不能用 Debug
+-->
+<Obfuscator>
+  <!-- 输入：Release 编译/发布输出目录 -->
+  <Var name="InPath" value="C:\Users\wang1\Desktop\AISmartConstructionProject\AiConstruction\bin\Release\net8.0-windows" />
+  <!-- 输出：混淆结果目录 -->
+  <Var name="OutPath" value="C:\Users\wang1\Desktop\AISmartConstructionProject\AiConstruction\bin\Obfuscated" />
+  <!-- 重命名映射日志：混淆后崩溃堆栈是乱码名，靠这个文件对照还原（自己保存，别外发） -->
+  <Var name="LogFile" value="C:\Users\wang1\Desktop\AISmartConstructionProject\AiConstruction\bin\ObfuscarMapping.xml" />
+
+  <!-- 保留 public API：WPF 绑定(反射找属性/命令)、Newtonsoft.Json 反序列化(DTO 属性名) 全部安全 -->
+  <Var name="KeepPublicApi" value="true" />
+  <!-- 重命名 private/internal 成员：核心业务逻辑被混淆（正是要保护的部分） -->
+  <Var name="HidePrivateApi" value="true" />
+
+  <!-- 阻止 ILDASM 直接反编译（.NET Framework 场景有效，.NET Core 下无害） -->
+  <Var name="SuppressIldasm" value="true" />
+
+  <!-- 字符串加密：把常量字符串（API 地址、提示语等）加密成运行时解密，防止 strings/dnSpy 直接读明文 -->
+  <Var name="HideStrings" value="true" />
+
+  <Module file="$(InPath)\AiConstruction.dll">
+    <!-- 跳过 App 和全部 XAML 界面类：
+         x:Name 生成的 internal 字段、XAML 事件处理器、BAML 引用都不能被重命名，
+         否则运行时界面加载直接崩溃 -->
+    <SkipType name="AiConstruction.App" />
+    <SkipType name="AiConstruction.View.*" />
+    <!-- 跳过编译器生成的匿名类型（new { ... }）：
+         AccountApiClient 等大量使用匿名类型做 System.Text.Json 请求体，
+         System.Text.Json 无论序列化还是反序列化都会校验构造器参数名，
+         混淆会剥离参数名导致 JsonException("登录异常"根因)。
+         skipMethods/skipFields/skipProperties 等开关确保该类型【完全不被处理】，
+         仅 SkipType 本身（只跳过类型名）不够，成员仍会被混淆、参数名仍会被剥离 -->
+    <!-- 注意：SkipType 的 name 是 glob 通配（* 匹配任意字符），不是正则；"." 是字面量 -->
+    <SkipType name="&lt;&gt;f__AnonymousType*" skipMethods="true" skipFields="true" skipProperties="true" skipEvents="true" skipStringHiding="true" />
+    <!--
+      ViewModel / Model / Api 命名空间不需要跳过：
+      - ViewModel：公开属性/命令被 KeepPublicApi 保留，private 业务逻辑照常混淆
+      - Model：DTO 公开属性保留，Newtonsoft.Json 属性名匹配安全
+      - Api：public 方法保留，内部调用 Obfuscar 会同步改名
+    -->
+  </Module>
+</Obfuscator>

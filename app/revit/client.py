@@ -196,6 +196,16 @@ class RevitApiClient:
         """Start IFC export for the active Revit document."""
         return await self._post_operation("/ExportIFC", {"IfcFilePath": ifc_file_path}, wait_forever)
 
+    async def open_delivery(
+        self, element_ids: list[str | int], *, wait_forever: bool = False
+    ) -> Dict[str, Any]:
+        """Send failed element IDs to the Revit plugin to open and locate unpassed components."""
+        return await self._post_operation(
+            "/OpenDelivery",
+            {"ElementIds": [str(eid) for eid in element_ids]},
+            wait_forever,
+        )
+
     async def _post_operation(
         self, path: str, payload: Optional[Dict[str, Any]], wait_forever: bool
     ) -> Dict[str, Any]:

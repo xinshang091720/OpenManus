@@ -1,9 +1,12 @@
+using AiConstruction.Model;
 using AiConstruction.ViewModel;
 using System.Diagnostics;
 using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
+using Key = System.Windows.Input.Key;
 
 namespace AiConstruction.View.MainInterface
 {
@@ -28,17 +31,62 @@ namespace AiConstruction.View.MainInterface
         [DllImport("user32.dll")]
         [return: MarshalAs(UnmanagedType.Bool)]
         static extern bool SetForegroundWindow(IntPtr hWnd);
+        private HomeInterfaceVM _vm = null!;
         public HomeInterface()
         {
-           
-            this.DataContext = new HomeInterfaceVM();
+            _vm = new HomeInterfaceVM(this);
+            this.DataContext = _vm;
             InitializeComponent();
+            this.Closed += HomeInterface_Closed;
+            // 注入遮罩层显示/隐藏委托（弹窗时底层变灰）
+            _vm.SetMaskVisibilityAction = (visible) =>
+            {
+                if (FindName("MaskLayer") is System.Windows.Controls.Border mask)
+                {
+                    mask.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+                    if (visible)
+                        this.UpdateLayout();  // 🔑 强制同步布局+渲染
+                }
+            };
             if (DataContext is HomeInterfaceVM viewModel)
             {
                 viewModel.ScrollViewer = scrollViewer;
             }
+            IsProcess();
+            // 监听窗口尺寸变化，拖动缩放时实时更新状态
+            this.SizeChanged += Window_SizeChanged;
+            //设置托盘
+            string icoPath = System.IO.Path.Combine(AppContext.BaseDirectory, "logo.ico");
+            System.Drawing.Icon? trayIcon = null;
+            if (System.IO.File.Exists(icoPath))
+            {
+                try { trayIcon = new System.Drawing.Icon(icoPath); }
+                catch { }
+            }
+            notifyIcon = new System.Windows.Forms.NotifyIcon
+            {
+                Icon = trayIcon,
+                Text = "AI智建",
+                Visible = true
+            };
+            // 创建一个上下文菜单
+            var menuStrip = new System.Windows.Forms.ContextMenuStrip();
+            menuStrip.Items.Add("显示", null, (s, e) => ShowWindow());
+            menuStrip.Items.Add("隐藏", null, (s, e) => HideWindow());
+            menuStrip.Items.Add("退出", null, (s, e) => ExitApplication());
+            // 将上下文菜单附加到 NotifyIcon
+            notifyIcon.ContextMenuStrip = menuStrip;
+            notifyIcon.MouseDoubleClick += (s, e) => ShowWindow();
+        }
 
-        
+        private void HomeInterface_Closed(object? sender, EventArgs e)
+        {
+            notifyIcon.Visible = false;  // 必须先设为 false
+            notifyIcon.Dispose();        // 然后释放资源
+        }
+
+        public void IsProcess()
+        {
             Process[] processes = Process.GetProcessesByName("AiConstruction");
             if (processes.Length > 1)
             {
@@ -49,7 +97,7 @@ namespace AiConstruction.View.MainInterface
                     {
                         IntPtr hWnd = FindWindow(null, "AI智建");
                         if (hWnd != IntPtr.Zero)
-                        { 
+                        {
                             // 检查窗口是否最小化
                             if (IsIconic(hWnd))
                             {
@@ -64,25 +112,8 @@ namespace AiConstruction.View.MainInterface
                     }
                 }
             }
-            // 监听窗口尺寸变化，拖动缩放时实时更新状态
-            this.SizeChanged += Window_SizeChanged;
-            //设置托盘
-            string icoPath = System.IO.Path.Combine(AppContext.BaseDirectory, "logo.ico");
-            notifyIcon = new System.Windows.Forms.NotifyIcon
-            {
-                Icon = new Icon(icoPath), // 设置图标路径
-                Text = "AI智建", // 设置提示文本
-                Visible = true // 设置为可见
-            };
-            // 创建一个上下文菜单
-            var menuStrip = new System.Windows.Forms.ContextMenuStrip();
-            menuStrip.Items.Add("显示", null, (s, e) => ShowWindow());
-            menuStrip.Items.Add("隐藏", null, (s, e) => HideWindow());
-            menuStrip.Items.Add("退出", null, (s, e) => ExitApplication());
-            // 将上下文菜单附加到 NotifyIcon
-            notifyIcon.ContextMenuStrip = menuStrip;
-            notifyIcon.MouseDoubleClick += (s, e) => ShowWindow();
         }
+
         private void Window_SizeChanged(object sender, SizeChangedEventArgs e)
         {
             // 仅同步按钮勾选，WindowState 由系统自动维护
@@ -148,5 +179,27 @@ namespace AiConstruction.View.MainInterface
             msg.IsStepsExpanded = !msg.IsStepsExpanded;
         }
 
+     
+        /// <summary>
+        /// 分组子项或叶子节点点击 → 选中并加载历史对话
+        /// </summary>
+        private void GroupHistoryItem_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is not Button border) return;
+
+            var item = border.DataContext switch
+            {
+                // 子项（在 Children 内）：DataContext 直接是 GroupHistory
+                Model.GroupHistory gh => gh,
+                // 叶子节点：DataContext 是 GroupHistoryNode
+                Model.GroupHistoryNode node => node.Item,
+                _ => null
+            };
+
+            if (item != null && DataContext is HomeInterfaceVM vm)
+            {
+                vm.SelectGroupItemCommand.Execute(item);
+            }
+        }
     }
 }

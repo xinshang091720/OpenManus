@@ -10,22 +10,102 @@
     <NoWarn>$(NoWarn);CS8602</NoWarn>
 	
     <ApplicationIcon>logo.ico</ApplicationIcon>
+	
+    <Version>1.0.9</Version>
   </PropertyGroup>
 
   <ItemGroup>
+    <None Remove="Img\ArrowsClockwise.png" />
+    <None Remove="Img\Avatar.png" />
+    <None Remove="Img\Bell.png" />
+    <None Remove="Img\CheckCircle.png" />
+    <None Remove="Img\CirclesFour.png" />
+    <None Remove="Img\DeviceMobileCamera.png" />
+    <None Remove="Img\FileText.png" />
+    <None Remove="Img\Folder.png" />
+    <None Remove="Img\FolderOpen.png" />
+    <None Remove="Img\Funnel.png" />
+    <None Remove="Img\GearSix.png" />
+    <None Remove="Img\LockKey.png" />
     <None Remove="Img\logo-300 1.png" />
     <None Remove="Img\MagnifyingGlass.png" />
     <None Remove="Img\PaperPlaneRight.png" />
+    <None Remove="Img\PlugsConnected.png" />
+    <None Remove="Img\PlusCircle.png" />
+    <None Remove="Img\Question.png" />
+    <None Remove="Img\ShareNetwork.png" />
+    <None Remove="Img\ShieldCheck.png" />
     <None Remove="Img\SidebarSimple.png" />
+    <None Remove="Img\SignOut.png" />
+    <None Remove="Img\Wrench.png" />
+    <None Remove="Img\人物.png" />
   </ItemGroup>
 
   <ItemGroup>
+    <Resource Include="Img\人物.png">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Resource>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="logo.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Img\ArrowsClockwise.png">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Resource>
+    <Resource Include="Img\Avatar.png">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Resource>
+    <Resource Include="Img\Bell.png">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Resource>
+    <Resource Include="Img\CheckCircle.png">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Resource>
+    <Resource Include="Img\CirclesFour.png">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Resource>
+    <Resource Include="Img\DeviceMobileCamera.png">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Resource>
+    <Resource Include="Img\FileText.png">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Resource>
+    <Resource Include="Img\Folder.png">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Resource>
+    <Resource Include="Img\FolderOpen.png">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Resource>
+    <Resource Include="Img\Funnel.png">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Resource>
+    <Resource Include="Img\GearSix.png">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Resource>
+    <Resource Include="Img\LockKey.png">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Resource>
     <Resource Include="Img\PaperPlaneRight.png">
       <CopyToOutputDirectory>Never</CopyToOutputDirectory>
     </Resource>
-    <Content Include="logo.ico">
+    <Resource Include="Img\PlugsConnected.png">
       <CopyToOutputDirectory>Never</CopyToOutputDirectory>
-    </Content>
+    </Resource>
+    <Resource Include="Img\PlusCircle.png">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Resource>
+    <Resource Include="Img\Question.png">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Resource>
+    <Resource Include="Img\ShareNetwork.png">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Resource>
+    <Resource Include="Img\ShieldCheck.png">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Resource>
   </ItemGroup>
 
   <ItemGroup>
@@ -38,16 +118,25 @@
     <Resource Include="Img\SidebarSimple.png">
       <CopyToOutputDirectory>Never</CopyToOutputDirectory>
     </Resource>
+    <Resource Include="Img\SignOut.png">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Resource>
+    <Resource Include="Img\Wrench.png">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Resource>
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <PackageReference Include="HandyControl" Version="3.5.1" />
     <PackageReference Include="MarkdView" Version="1.0.11" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageReference Include="System.Drawing.Common" Version="10.0.10" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="9.0.11" />
   </ItemGroup>
 
   <ItemGroup>
+    <Folder Include="Img\新文件夹\" />
     <Folder Include="Model\" />
     <Folder Include="Api\" />
   </ItemGroup>

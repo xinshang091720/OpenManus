@@ -142,14 +142,7 @@ class ProfessionSelectionRequired(ValueError):
         super().__init__(message)
 
 
-def _run_sz_ifc_inspection(
-    ifc_path: str,
-    profession: str,
-    output_path: str | None,
-    rule_name: str | None,
-    timeout_seconds: int,
-    cancel_event: threading.Event | None = None,
-) -> str | dict[str, Any]:
+def _load_sz_ifc_module():
     script = (
         Path(__file__).resolve().parents[2]
         / "q_agent_function_module"
@@ -164,6 +157,18 @@ def _run_sz_ifc_inspection(
         raise RuntimeError("无法加载 SZ-IFC 检查脚本")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    return module
+
+
+def _run_sz_ifc_inspection(
+    ifc_path: str,
+    profession: str,
+    output_path: str | None,
+    rule_name: str | None,
+    timeout_seconds: int,
+    cancel_event: threading.Event | None = None,
+) -> str | dict[str, Any]:
+    module = _load_sz_ifc_module()
     return module.run_sz_ifc_full_inspection(
         ifc_path,
         profession,
@@ -677,12 +682,29 @@ class RevitProjectDelivery:
                 "SZ-IFC 未生成 DOCX 报告，不能将质检标记为成功："
                 f"{delivered_report}"
             )
-        return {
+        failed_ids: list[str] = []
+        try:
+            sz_mod = _load_sz_ifc_module()
+            extract_fn = getattr(sz_mod, "extract_failed_element_ids_from_docx", None)
+            if extract_fn:
+                failed_ids = extract_fn(delivered_report)
+        except Exception:
+            pass
+
+        result: dict[str, Any] = {
             "status": "completed",
             "ifc_path": str(ifc_path),
             "report_path": str(delivered_report),
             "profession": resolved_profession,
         }
+        if failed_ids:
+            result["failed_element_count"] = len(failed_ids)
+            result["failed_element_ids"] = failed_ids[:10]
+            result["delivery_status"] = f"已自动在 Revit 中打开一键交付协同修改界面（包含 {len(failed_ids)} 个不合格构件）"
+        else:
+            result["failed_element_count"] = 0
+            result["delivery_status"] = "质检全部通过（100%），无不合格构件"
+        return result
 
     @staticmethod
     def _docx_is_complete(path: Path) -> bool:

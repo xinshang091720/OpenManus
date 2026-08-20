@@ -2,7 +2,25 @@
 <Project ToolsVersion="Current" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup />
   <ItemGroup>
+    <Compile Update="View\LoginRegistration\Authorization.xaml.cs">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Update="View\LoginRegistration\RegisteredSuccessfully.xaml.cs">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Update="View\LoginRegistration\ResetPasswords.xaml.cs">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Update="View\LoginRegistration\Unregistered.xaml.cs">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Update="View\MainInterface\AddCreateSpace.xaml.cs">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Update="View\MainInterface\HomeInterface.xaml.cs">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Update="View\MainInterface\WhetherUpdate.xaml.cs">
       <SubType>Code</SubType>
     </Compile>
   </ItemGroup>

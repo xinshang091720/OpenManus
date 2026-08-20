@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import os
 import re
 import time
+import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
 
+import requests
 import win32gui
 import win32process
 from pywinauto import Application
@@ -657,4 +660,117 @@ def run_sz_ifc_full_inspection(
             f"DOCX 报告未在限定时间内完成稳定写入，最终状态未知：{report_path}"
         )
     logger.info(f"SZ-IFC 质检完成，报告已保存：{report_path}")
+
+    # 解析质检报告，提取未通过构件 ID 并与 Revit 交互
+    try:
+        failed_ids = extract_failed_element_ids_from_docx(report_path)
+        if failed_ids:
+            logger.info(
+                f"[8/8] 质检发现未通过项，共提取到 {len(failed_ids)} 个构件 ID，"
+                f"示例：{failed_ids[:5]}，正在触发 Revit 一键交付定位..."
+            )
+            set_tool_progress(
+                "revit_inspect_ifc",
+                f"检测到 {len(failed_ids)} 个未通过构件，正在调用 Revit 一键交付定位",
+            )
+            call_open_delivery_api(failed_ids)
+        else:
+            logger.info("[8/8] 质检报告检查项全部通过（通过率 100%），无需打开交付定位。")
+    except Exception as error:
+        logger.warning(f"质检报告未通过项解析或 OpenDelivery 调用失败，不影响主流程报告生成：{error}")
+
     return str(report_path)
+
+
+def extract_failed_element_ids_from_docx(docx_path: str | Path) -> list[str]:
+    """从 SZ-IFC 质检报告 docx 中精确提取所有未通过规则的构件 ID 列表。
+
+    返回按数值/字母升序排序且已去重的字符串 ID 列表。
+    """
+    docx_file = Path(docx_path).resolve()
+    if not docx_file.is_file():
+        raise FileNotFoundError(f"输入的 DOCX 质检报告文件不存在：{docx_file}")
+
+    ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+    failed_ids = set()
+
+    try:
+        with zipfile.ZipFile(docx_file) as doc:
+            if "word/document.xml" not in doc.namelist():
+                return []
+            xml_content = doc.read("word/document.xml")
+            root = ET.fromstring(xml_content)
+
+            for tbl in root.findall(".//w:tbl", ns):
+                for tr in tbl.findall(".//w:tr", ns):
+                    cells = [
+                        "".join(tc.itertext()).strip()
+                        for tc in tr.findall(".//w:tc", ns)
+                    ]
+                    # 匹配规则未通过行：第一列标记为 '未通过'
+                    if len(cells) >= 2 and cells[0] == "未通过":
+                        raw_id_str = cells[1]
+                        raw_tokens = [
+                            token.strip()
+                            for token in re.split(r"[,;；，\s\n]+", raw_id_str)
+                            if token.strip()
+                        ]
+                        for token in raw_tokens:
+                            if token != "未通过" and (token.isdigit() or len(token) >= 2):
+                                failed_ids.add(token)
+    except Exception as error:
+        logger.error(f"解析 DOCX 质检报告失败：{error}")
+        raise
+
+    def sort_key(val: str):
+        return (0, int(val)) if val.isdigit() else (1, val)
+
+    return sorted(list(failed_ids), key=sort_key)
+
+
+def _get_revit_api_base_url() -> str:
+    """获取 Revit 插件 API Base URL，优先读取环境变量 BEESYNC_REVIT_API_BASE_URL。"""
+    env_url = os.environ.get("BEESYNC_REVIT_API_BASE_URL")
+    if env_url and env_url.strip():
+        return env_url.strip().rstrip("/")
+    try:
+        from app.revit.client import configured_revit_api_base_url
+        return configured_revit_api_base_url()
+    except Exception:
+        return "http://localhost:5000//api/RevitApi"
+
+
+def call_open_delivery_api(
+    element_ids: list[str],
+    api_url: str | None = None,
+    timeout: int = 60,
+) -> dict:
+    """调用 C# RevitApi/OpenDelivery 接口在 Revit 中打开并高亮显示未通过构件。"""
+    if api_url:
+        trimmed = api_url.strip().rstrip("/")
+        url = trimmed if trimmed.endswith("/OpenDelivery") else f"{trimmed}/OpenDelivery"
+    else:
+        base_url = _get_revit_api_base_url()
+        url = f"{base_url}/OpenDelivery"
+
+    headers = {"content-type": "application/json"}
+    payload = {"ElementIds": [str(eid) for eid in element_ids]}
+
+    logger.info(f"正在调用 OpenDelivery 接口：{url}，包含 {len(element_ids)} 个构件 ID")
+    try:
+        response = requests.post(url, json=payload, headers=headers, timeout=timeout)
+        try:
+            res_data = response.json()
+        except Exception:
+            res_data = {"code": response.status_code, "msg": response.text}
+
+        code = res_data.get("code")
+        msg = res_data.get("msg", "")
+        if code == 200:
+            logger.info(f"OpenDelivery 接口调用成功 (Code: 200): {msg}")
+        else:
+            logger.warning(f"OpenDelivery 接口返回状态 (Code: {code}): {msg}")
+        return res_data
+    except Exception as error:
+        logger.error(f"调用 OpenDelivery 接口异常：{error}")
+        return {"code": 500, "msg": str(error)}

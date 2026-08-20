@@ -202,3 +202,19 @@ cython_debug/
 
 # node
 node_modules
+
+### .NET / Visual Studio ###
+[Bb]in/
+[Oo]bj/
+*.user
+*.suo
+.vs/
+*.userosscache
+*.sln.docstates
+*.exe
+*.dll
+*.pdb
+*.baml
+Installer/
+*.cache
+*.vsidx
