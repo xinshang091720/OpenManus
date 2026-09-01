@@ -100,12 +100,74 @@ $NativeRuntimePackages = @(
     "yaml"
 )
 
+New-Item -ItemType Directory -Force -Path $BuildRoot | Out-Null
+
+$VersionRawParts = ($Version -split '[^\d]+') | Where-Object { $_ -ne "" }
+$V0 = if ($VersionRawParts.Count -gt 0) { [int]$VersionRawParts[0] } else { 1 }
+$V1 = if ($VersionRawParts.Count -gt 1) { [int]$VersionRawParts[1] } else { 0 }
+$V2 = if ($VersionRawParts.Count -gt 2) { [int]$VersionRawParts[2] } else { 0 }
+$V3 = if ($VersionRawParts.Count -gt 3) { [int]$VersionRawParts[3] } else { 0 }
+$VersionTuple = "($V0, $V1, $V2, $V3)"
+
+$VersionFileContent = @"
+# UTF-8
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers=$VersionTuple,
+    prodvers=$VersionTuple,
+    mask=0x3f,
+    flags=0x0,
+    OS=0x40004,
+    fileType=0x1,
+    subtype=0x0,
+    date=(0, 0)
+  ),
+  kids=[
+    StringFileInfo(
+      [
+        StringTable(
+          '080404b0',
+          [
+            StringStruct('CompanyName', 'Anbi'),
+            StringStruct('FileDescription', 'BeeSync Agent Runtime'),
+            StringStruct('FileVersion', '$Version'),
+            StringStruct('InternalName', 'BeeSync.AgentRuntime.exe'),
+            StringStruct('LegalCopyright', 'Copyright (C) 2026 Anbi. All rights reserved.'),
+            StringStruct('OriginalFilename', 'BeeSync.AgentRuntime.exe'),
+            StringStruct('ProductName', 'BeeSync'),
+            StringStruct('ProductVersion', '$Version')
+          ]
+        ),
+        StringTable(
+          '040904b0',
+          [
+            StringStruct('CompanyName', 'Anbi'),
+            StringStruct('FileDescription', 'BeeSync Agent Runtime'),
+            StringStruct('FileVersion', '$Version'),
+            StringStruct('InternalName', 'BeeSync.AgentRuntime.exe'),
+            StringStruct('LegalCopyright', 'Copyright (C) 2026 Anbi. All rights reserved.'),
+            StringStruct('OriginalFilename', 'BeeSync.AgentRuntime.exe'),
+            StringStruct('ProductName', 'BeeSync'),
+            StringStruct('ProductVersion', '$Version')
+          ]
+        )
+      ]
+    ),
+    VarFileInfo([VarStruct('Translation', [2052, 1200, 1033, 1200])])
+  ]
+)
+"@
+
+$VersionFilePath = Join-Path $BuildRoot "file_version_info.txt"
+[System.IO.File]::WriteAllText($VersionFilePath, $VersionFileContent, [System.Text.Encoding]::UTF8)
+
 $PyInstallerArgs = @(
     "--noconfirm", "--clean", "--onedir",
     "--name", "BeeSync.AgentRuntime",
     "--distpath", $OutputRoot,
     "--workpath", $BuildRoot,
     "--specpath", $BuildRoot,
+    "--version-file", $VersionFilePath,
     "--additional-hooks-dir", (Join-Path $PSScriptRoot "pyinstaller_hooks"),
     "--paths", $PackageRoot,
     "--add-data", "$PackageRoot\skills;skills",

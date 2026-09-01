@@ -98,8 +98,14 @@ def _find_prepared_sz_ifc_main_window(
     ifc_filename=None, process_id=None, *, full_scan=True
 ):
     """Return the unique prepared main window, preferring the requested model."""
+    all_cbims = _cbims_windows(process_id)
+    if not all_cbims:
+        raise SzIfcUserActionRequired(
+            f"未检测到已运行的 SZ-IFC 应用程序。请先启动 SZ-IFC，并在软件中手动加载目标 IFC 模型：{ifc_filename or ''}".strip()
+        )
+
     main_windows = [
-        item for item in _cbims_windows(process_id) if item["title"] != "StartWindow"
+        item for item in all_cbims if item["title"] != "StartWindow"
     ]
     if ifc_filename:
         matches = []
@@ -116,10 +122,12 @@ def _find_prepared_sz_ifc_main_window(
             )
         if matches:
             return matches[0]
-        return None
+        raise SzIfcUserActionRequired(
+            f"SZ-IFC 应用程序已打开，但尚未检测到加载目标 IFC 模型。请在 SZ-IFC 中手动加载：{ifc_filename}"
+        )
     if main_windows:
         return max(main_windows, key=lambda item: item["area"])["handle"]
-    if _cbims_windows(process_id):
+    if all_cbims:
         raise RuntimeError("检测到 SZ-IFC StartWindow，但尚未检测到模型主窗口。")
     raise RuntimeError("未检测到已打开的 SZ-IFC/CBIMS 主窗口。")
 

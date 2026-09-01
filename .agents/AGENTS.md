@@ -31,6 +31,14 @@ Not lazy about: understanding the problem (read it fully and trace the real flow
 
 (Yes, this file also applies to agents working on the ponytail repo itself. Especially to them.)
 
+## Revit / CAD / SZ-IFC 交付操作
+
+当用户要求操作本项目的 Revit/CAD/SZ-IFC 交付能力（开模型、基点、房间创建、IFC 赋值、
+IFC 导出、SZ-IFC 自检/质检）时，先读 `.agents/REVIT-OPS.md`：它记录每个业务工具的
+Python 入口、续办状态机、前置条件与安全边界。核心要点：这里的"质检/自检"只指 SZ-IFC
+自检（`revit_inspect_ifc`）；只有用户明确要求时才做 IFC 赋值；收到"已加载/继续"等确认后
+直接自检，严禁重复赋值/导出/开模型/建房。
+
 ## BeeSync product boundary
 
 BeeSync is a local Windows desktop Agent.  Its normal Runtime operates on the

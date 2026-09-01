@@ -353,26 +353,12 @@ def _selection_required_floor_detection(
     }
 
 
-def _resolve_floor_from_local_drawing_title(
-    dxf_path: str,
+def _resolve_floor_from_local_texts(
+    raw_texts: list[str],
     *,
     filename_hint: int | float | None,
 ) -> dict[str, Any] | None:
-    """Use explicit DXF title text before consulting any filename hint.
-
-    This is intentionally deterministic and cheap.  The legacy model-backed
-    title reader remains a low-frequency fallback for drawings whose title is
-    too irregular for these clear patterns.
-    """
-    try:
-        from q_agent_function_module.ohresult.CAD_Git_Coordinates.my_code.room_coordinates.git_cad_floor import (
-            extract_all_texts_from_dxf,
-        )
-
-        raw_texts = extract_all_texts_from_dxf(dxf_path)
-    except Exception:
-        return None
-
+    """Use explicit DWG title text before consulting any filename hint."""
     candidates: list[tuple[int, str, list[int | float]]] = []
     for raw_text in raw_texts:
         text = re.sub(r"\\[a-zA-Z0-9]+;|\{[^{}]*\}", "", str(raw_text or "")).strip()
@@ -409,36 +395,79 @@ def _resolve_floor_from_local_drawing_title(
     )
 
 
+def _resolve_floor_from_local_drawing_title(
+    dxf_path: str,
+    *,
+    filename_hint: int | float | None,
+) -> dict[str, Any] | None:
+    """Compatibility fallback."""
+    return None
+
+
 def _resolve_floor_from_legacy_title_reader(
     dxf_path: str,
     *,
     filename_hint: int | float | None,
 ) -> dict[str, Any] | None:
-    """Retain the existing model-assisted title reader as a compatibility fallback."""
-    try:
-        from q_agent_function_module.ohresult.CAD_Git_Coordinates.my_code.room_coordinates.git_cad_floor import (
-            get_cad_floor_info,
-        )
+    """Compatibility fallback."""
+    return None
 
-        floor_info = get_cad_floor_info(dxf_path)
-    except Exception:
-        return None
-    if not isinstance(floor_info, dict):
-        return None
-    entries = _floor_entries_from_drawing_info(floor_info)
-    matched_text = str(floor_info.get("matched_text") or "").strip()
-    # The legacy prompt uses zero as its "cannot determine" sentinel.  It is
-    # not safe to turn that sentinel into a first-floor Revit write; an
-    # explicit 1F/一层 title or user mapping resolves that case instead.
-    if not entries or entries == [0] or not matched_text:
-        return None
-    return _resolved_floor_detection(
-        source="drawing_text",
-        confidence="medium",
-        floor_entries=entries,
-        filename_hint=filename_hint,
-        matched_text=matched_text,
+
+def _extract_rooms_and_floor_from_texts(
+    text_items: list[dict[str, Any]],
+    dwg_filename: str = "",
+    *,
+    fallback_floor: int | float | None = None,
+) -> tuple[dict[str, Any], list[int | float], dict[str, Any]]:
+    """Process DWG text items and return rooms plus floor mapping."""
+    from q_agent_function_module.ohresult.CAD_Git_Coordinates.my_code.room_coordinates.dwg_room_extractor import (
+        process_room_extraction_from_texts,
     )
+    from q_agent_function_module.ohresult.CAD_Git_Coordinates.my_code.room_coordinates.git_cad_floor import (
+        judge_floor_from_texts,
+    )
+
+    extracted = process_room_extraction_from_texts(text_items)
+    raw_texts = [str(item.get("Text") or "") for item in text_items if item.get("Text")]
+
+    local_detection = _resolve_floor_from_local_texts(
+        raw_texts,
+        filename_hint=fallback_floor,
+    )
+    if local_detection is not None:
+        return extracted, local_detection["floor_entries"], local_detection
+
+    floor_res = judge_floor_from_texts(raw_texts, dwg_filename)
+    if isinstance(floor_res, dict):
+        min_f = _coerce_floor_number(floor_res.get("min_floor"))
+        max_f = _coerce_floor_number(floor_res.get("max_floor"))
+        matched_text = str(floor_res.get("matched_text") or "").strip()
+        if min_f is not None and max_f is not None:
+            entries = _floor_entries_from_bounds(min_f, max_f)
+            if entries and entries != [0] and matched_text:
+                detection = _resolved_floor_detection(
+                    source="drawing_text",
+                    confidence="high",
+                    floor_entries=entries,
+                    filename_hint=fallback_floor,
+                    matched_text=matched_text,
+                )
+                return extracted, entries, detection
+
+    if fallback_floor is not None:
+        entries = [_normalise_floor_number(fallback_floor)]
+        detection = _resolved_floor_detection(
+            source="filename_hint",
+            confidence="medium",
+            floor_entries=entries,
+            filename_hint=fallback_floor,
+        )
+        return extracted, entries, detection
+
+    detection = _selection_required_floor_detection(
+        filename_hint=fallback_floor,
+    )
+    return extracted, [], detection
 
 
 def _extract_rooms_and_floor_from_dwg(
@@ -446,73 +475,12 @@ def _extract_rooms_and_floor_from_dwg(
     *,
     fallback_floor: int | float | None = None,
 ) -> tuple[dict[str, Any], list[int | float], dict[str, Any]]:
-    """Process one DWG once and return its rooms plus its floor mapping.
-
-    Every caller passes a project DWG into this function.  A filename-derived
-    value is only a compatibility candidate: title-block information inside
-    the converted drawing always takes precedence, and an unresolved drawing
-    remains part of the preflight rather than being silently filtered out.
-    """
-    from q_agent_function_module.ohresult.CAD_Git_Coordinates.my_code.room_coordinates.dwg_room_extractor import (
-        process_dwg_room_extraction,
+    """Compatibility wrapper."""
+    return _extract_rooms_and_floor_from_texts(
+        [],
+        Path(dwg_path).name,
+        fallback_floor=fallback_floor,
     )
-    from q_agent_function_module.ohresult.CAD_Git_Coordinates.my_code.room_coordinates.dwg_room_extractor_main import (
-        _convert_dwg_to_dxf_via_autocad,
-    )
-
-    # AutoCAD can reject an Automation call while it is completing a command
-    # (RPC_E_CALL_REJECTED).  Retrying the conversion is safe: it only opens
-    # the source read-only and writes a private temporary DXF.  Never repair
-    # this condition by killing/restarting AutoCAD or closing unrelated files.
-    for attempt in range(3):
-        dxf_path: str | None = None
-        try:
-            dxf_path = _convert_dwg_to_dxf_via_autocad(dwg_path)
-            set_tool_progress(
-                "revit_create_and_name_ar_rooms",
-                "正在识别 DWG 房间文字",
-                drawing_name=Path(dwg_path).name,
-            )
-            extracted = process_dwg_room_extraction(dxf_path)
-            local_detection = _resolve_floor_from_local_drawing_title(
-                dxf_path,
-                filename_hint=fallback_floor,
-            )
-            if local_detection is not None:
-                return extracted, local_detection["floor_entries"], local_detection
-
-            legacy_detection = _resolve_floor_from_legacy_title_reader(
-                dxf_path,
-                filename_hint=fallback_floor,
-            )
-            if legacy_detection is not None:
-                return extracted, legacy_detection["floor_entries"], legacy_detection
-
-            if fallback_floor is not None:
-                entries = [_normalise_floor_number(fallback_floor)]
-                detection = _resolved_floor_detection(
-                    source="filename_hint",
-                    confidence="medium",
-                    floor_entries=entries,
-                    filename_hint=fallback_floor,
-                )
-                return extracted, entries, detection
-
-            detection = _selection_required_floor_detection(
-                filename_hint=fallback_floor,
-            )
-            return extracted, [], detection
-        except RuntimeError as error:
-            text = str(error).casefold()
-            is_busy = any(marker in text for marker in _AUTOCAD_BUSY_MARKERS)
-            if not is_busy or attempt == 2:
-                raise
-            time.sleep(2 * (attempt + 1))
-        finally:
-            if dxf_path and os.path.exists(dxf_path):
-                os.remove(dxf_path)
-
-    raise RuntimeError("AutoCAD DWG conversion did not complete")
 
 
 def _extract_rooms_from_dwg(dwg_path: str) -> dict[str, Any]:
@@ -543,7 +511,6 @@ class RoomSyncWorkflow:
         if discipline.strip().upper() not in {"AR", "建筑"}:
             raise ValueError("房间同步仅适用于用户确认的建筑（AR）模型")
         async with self.lock.hold():
-            cad_document_closed = await asyncio.to_thread(close_autocad_document_if_open, dwg_path)
             grid = await call_revit_operation(
                 self.client, "DwgRevitGridData", self.client.dwg_revit_grid_data, dwg_path
             )
@@ -564,14 +531,17 @@ class RoomSyncWorkflow:
                     "reason": alignment["reason"],
                     "grid_axis_code": {"revit": rvt_grid.get("AxisCode"), "dwg": dwg_grid.get("AxisCode")},
                     "alignment": alignment,
-                    "cad_document_closed": cad_document_closed,
+                    "cad_document_closed": True,
                 }
 
-            # The plugin may have opened the drawing while reading its grid.
-            await asyncio.to_thread(close_autocad_document_if_open, dwg_path)
+            text_res = await call_revit_operation(
+                self.client, "GetDwgText", self.client.get_dwg_text, dwg_path
+            )
+            text_items = text_res.get("data", []) if isinstance(text_res, dict) else []
             extracted, floor_entries, floor_detection = await asyncio.to_thread(
-                _extract_rooms_and_floor_from_dwg,
-                dwg_path,
+                _extract_rooms_and_floor_from_texts,
+                text_items,
+                Path(dwg_path).name,
                 fallback_floor=_floor_from_path(dwg_path),
             )
             if floor_detection.get("status") != "resolved" or not floor_entries:
@@ -581,7 +551,7 @@ class RoomSyncWorkflow:
                     "dwg_path": dwg_path,
                     "floor_detection": floor_detection,
                     "alignment": alignment,
-                    "cad_document_closed": cad_document_closed,
+                    "cad_document_closed": True,
                 }
             transformed = transform_room_texts(
                 extracted, calculate_segment_translation_vector(rvt_line, dwg_line)

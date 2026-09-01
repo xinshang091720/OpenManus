@@ -1087,10 +1087,11 @@ class RuntimeManager:
                 )
             except Exception as error:
                 run.status = "failed"
+                friendly_error = self._friendly_error_message(error)
                 await self._emit(
                     run,
                     "run_failed",
-                    {"run_id": run.run_id, "error": str(error)},
+                    {"run_id": run.run_id, "error": friendly_error},
                 )
             finally:
                 if agent is not None:
@@ -1100,6 +1101,27 @@ class RuntimeManager:
                             await cleanup()
                         except Exception as cleanup_error:
                             logger.warning("Runtime agent cleanup failed: %s", cleanup_error)
+
+    @staticmethod
+    def _friendly_error_message(error: Any) -> str:
+        """Convert low-level exceptions like RateLimitError into user-friendly messages."""
+        if error is None:
+            return "任务执行失败"
+        err_str = str(error)
+        err_repr = repr(error)
+        combined = f"{err_str} {err_repr}".lower()
+        rate_limit_keywords = [
+            "ratelimiterror",
+            "budget_exceeded",
+            "budget has been exceeded",
+            "insufficient_quota",
+            "quota_exceeded",
+            "rate limit",
+            "429",
+        ]
+        if any(kw in combined for kw in rate_limit_keywords):
+            return "模型执行失败，请检查余额是否充足，如果不是请联系客服"
+        return err_str
 
     @staticmethod
     def _extract_artifacts(agent: RuntimeManus) -> list[dict[str, str]]:

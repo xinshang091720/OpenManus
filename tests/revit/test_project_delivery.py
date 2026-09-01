@@ -26,9 +26,30 @@ class DeliveryClient:
         self.export_paths = []
         self.export_path = export_path
 
+    async def base_point_setting_is_correct(self):
+        return {"code": 200, "data": {}}
+
+    async def get_dwg_text(self, dwg_file_path):
+        return {
+            "code": 200,
+            "data": [
+                {"Text": "X=2506045399.00", "Text_coordinates": "(507491908.00, 2506045399.00, 0)", "Text_layer": "0"},
+                {"Text": "Y=507491908.00", "Text_coordinates": "(507491908.00, 2506045399.00, 0)", "Text_layer": "0"},
+            ],
+        }
+
     async def base_point_setting(self, payload):
         self.base_point_payloads.append(payload)
-        return {"code": 200, "msg": "base point updated"}
+        return {
+            "code": 200,
+            "msg": "base point updated",
+            "data": {
+                "Northsouth": "2506045399.00",
+                "Eastwest": "507491908.00",
+                "Elevation": "73.9",
+                "Angleton": "120",
+            },
+        }
 
     async def open_revit_file(self, path):
         self.opened = path
@@ -1008,30 +1029,26 @@ def test_combined_delivery_returns_all_three_actual_paths(tmp_path, monkeypatch)
     assert payload["report_path"] == str(report)
 
 
-def test_base_point_delegates_extracted_payload(tmp_path, monkeypatch):
+def test_base_point_delegates_extracted_payload(tmp_path):
     dwg = tmp_path / "floor-B2.dwg"
     dwg.write_bytes(b"dwg")
-    payload = {"coordinates": [{"Northsouth": "1", "Eastwest": "2"}], "Elevation": 0, "Angleton": 0}
-    monkeypatch.setattr("app.revit.project_delivery._extract_base_point", lambda _: payload)
     client = DeliveryClient()
     workflow = RevitProjectDelivery(client)
     try:
         result = asyncio.run(workflow.set_base_point(str(dwg)))
     finally:
         workflow.close()
-    assert client.base_point_payloads == [payload]
+    assert len(client.base_point_payloads) == 1
+    assert "Coordinates" in client.base_point_payloads[0]
     assert result["message"] == "base point updated"
+    assert result["status"] == "completed"
 
 
-def test_base_point_optionally_opens_and_saves_the_target_model(tmp_path, monkeypatch):
+def test_base_point_optionally_opens_and_saves_the_target_model(tmp_path):
     dwg = tmp_path / "floor-B2.dwg"
     model = tmp_path / "model_AR-B2.rvt"
     dwg.write_bytes(b"dwg")
     model.write_bytes(b"rvt")
-    monkeypatch.setattr(
-        "app.revit.project_delivery._extract_base_point",
-        lambda _: {"coordinates": [], "Elevation": 0, "Angleton": 0},
-    )
     client = DeliveryClient()
     workflow = RevitProjectDelivery(client)
     try:
@@ -1041,3 +1058,72 @@ def test_base_point_optionally_opens_and_saves_the_target_model(tmp_path, monkey
     assert client.opened == str(model)
     assert client.saved == str(tmp_path / "results")
     assert result["saved_to"] == str(tmp_path / "results")
+
+
+def test_base_point_supports_direct_user_decision_coordinates():
+    client = DeliveryClient()
+    workflow = RevitProjectDelivery(client)
+    try:
+        result = asyncio.run(
+            workflow.set_base_point(
+                north_south="2506045.399",
+                east_west="507491.908",
+                elevation="73.9",
+                angle_to_north="120.0",
+            )
+        )
+    finally:
+        workflow.close()
+    assert len(client.base_point_payloads) == 1
+    coords = client.base_point_payloads[0]["Coordinates"]
+    assert coords[0]["Northsouth"] == "2506045.399"
+    assert coords[0]["Eastwest"] == "507491.908"
+    assert coords[0]["Elevation"] == "73.9"
+    assert coords[0]["Angleton"] == "120.0"
+    assert result["status"] == "completed"
+    assert result["elevation"] == "73.9"
+    assert result["angle"] == "120"
+
+
+def test_base_point_supports_json_string_and_chinese_keys():
+    client = DeliveryClient()
+    workflow = RevitProjectDelivery(client)
+    try:
+        result = asyncio.run(
+            workflow.set_base_point(
+                base_point_coordinates='{"\u5317\u5357": "2506045399.000", "\u4e1c\u897f": "507491908.000", "\u9ad8\u7a0b": "73900.000", "\u89d2\u5ea6": "216"}'
+            )
+        )
+    finally:
+        workflow.close()
+    assert len(client.base_point_payloads) == 1
+    coords = client.base_point_payloads[0]["Coordinates"]
+    assert coords[0]["Northsouth"] == "2506045399.000"
+    assert coords[0]["Eastwest"] == "507491908.000"
+    assert coords[0]["Elevation"] == "73900.000"
+    assert coords[0]["Angleton"] == "216"
+    assert coords[0]["IsGeneral"] == 1
+    assert result["status"] == "completed"
+
+
+def test_base_point_dwg_candidates_sent_with_is_general_zero(tmp_path, monkeypatch):
+    dwg = tmp_path / "site.dwg"
+    dwg.write_bytes(b"dwg")
+    client = DeliveryClient()
+    # Mock BasePointSettingIsCorrect returning incomplete
+    client.base_point_setting_is_correct_response = {"code": 200, "data": {}}
+    client.dwg_texts = [
+        {"Text": "X=2506045.399", "Text_coordinates": "(507491.908, 2506045.399, 0)", "Text_layer": "COORD"},
+        {"Text": "Y=507491.908", "Text_coordinates": "(507491.908, 2506045.399, 0)", "Text_layer": "COORD"},
+    ]
+    workflow = RevitProjectDelivery(client)
+    try:
+        result = asyncio.run(workflow.set_base_point(str(dwg)))
+    finally:
+        workflow.close()
+    assert len(client.base_point_payloads) == 1
+    coords = client.base_point_payloads[0]["Coordinates"]
+    assert len(coords) >= 1
+    for c in coords:
+        assert c["IsGeneral"] == 0
+    assert result["status"] == "completed"

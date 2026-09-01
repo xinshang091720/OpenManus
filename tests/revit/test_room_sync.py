@@ -32,35 +32,18 @@ def test_dwg_extractor_refuses_source_dwg_without_deleting_it(tmp_path):
     assert source.read_bytes() == b"source"
 
 
-def test_dwg_extraction_retries_only_autocad_busy_without_touching_source(tmp_path, monkeypatch):
-    source = tmp_path / "floor-B1.dwg"
-    source.write_bytes(b"source")
-    temporary_dxf = tmp_path / "temporary.dxf"
-    attempts = []
-    waits = []
-
-    def convert(_):
-        attempts.append("convert")
-        if len(attempts) == 1:
-            raise RuntimeError("-2147418111: 被呼叫方拒绝接收呼叫")
-        temporary_dxf.write_bytes(b"dxf")
-        return str(temporary_dxf)
-
-    monkeypatch.setattr(
-        "q_agent_function_module.ohresult.CAD_Git_Coordinates.my_code.room_coordinates.dwg_room_extractor_main._convert_dwg_to_dxf_via_autocad",
-        convert,
+def test_extract_rooms_from_texts():
+    from q_agent_function_module.ohresult.CAD_Git_Coordinates.my_code.room_coordinates.dwg_room_extractor import (
+        process_room_extraction_from_texts,
     )
-    monkeypatch.setattr(
-        "q_agent_function_module.ohresult.CAD_Git_Coordinates.my_code.room_coordinates.dwg_room_extractor.process_dwg_room_extraction",
-        lambda _: {"room_texts": []},
-    )
-    monkeypatch.setattr("app.revit.room_sync.time.sleep", lambda seconds: waits.append(seconds))
 
-    assert _extract_rooms_from_dwg(str(source)) == {"room_texts": []}
-    assert attempts == ["convert", "convert"]
-    assert waits == [2]
-    assert source.read_bytes() == b"source"
-    assert not temporary_dxf.exists()
+    text_items = [
+        {"Text": "办公室", "Text_coordinates": "(10, 20, 0)", "Text_layer": "ROOM_NAME"},
+        {"Text": "1F平面图", "Text_coordinates": "(0, 0, 0)", "Text_layer": "TITLE"},
+    ]
+    result = process_room_extraction_from_texts(text_items)
+    assert len(result["room_texts"]) == 1
+    assert result["room_texts"][0]["RoomName"] == "办公室"
 
 
 def test_obvious_drawing_annotations_are_not_room_names():
@@ -81,6 +64,9 @@ class GridClient:
 
     async def dwg_revit_grid_data(self, _):
         return self.grid
+
+    async def get_dwg_text(self, _):
+        return {"code": 200, "data": []}
 
     async def update_room_name(self, payload):
         self.updates.append(payload)

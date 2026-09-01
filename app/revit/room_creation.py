@@ -6,18 +6,20 @@ import asyncio
 import json
 import math
 import os
+import re
 import time
 import uuid
 from pathlib import Path
 from typing import Any
 
+from app.logger import logger
 from app.mcp.revit_lock import RevitProcessLock
 from app.revit.client import RevitApiClient
 from app.revit.operations import call_revit_operation
 from app.revit.project_delivery import prepare_save_folder
 from app.revit.save_result import resolve_fresh_saved_model_path, snapshot_folder_files
 from app.revit.room_sync import (
-    _extract_rooms_and_floor_from_dwg,
+    _extract_rooms_and_floor_from_texts,
     _floor_from_path,
     _points,
     close_autocad_document_if_open,
@@ -27,6 +29,7 @@ from app.tool_progress import set_tool_progress
 
 
 _PROGRESS_TOOL = "revit_create_and_name_ar_rooms"
+PURE_CHINESE_PATTERN = re.compile(r"^[\u4e00-\u9fa5]+$")
 
 
 class ArRoomCreationWorkflow:
@@ -182,6 +185,7 @@ class ArRoomCreationWorkflow:
             )
 
             total_drawings = len(drawings)
+            skipped_drawings: list[dict[str, Any]] = []
             for index, dwg_path in enumerate(drawings, start=1):
                 set_tool_progress(
                     _PROGRESS_TOOL,
@@ -189,24 +193,37 @@ class ArRoomCreationWorkflow:
                     drawing_index=index,
                     drawing_count=total_drawings,
                 )
-                await asyncio.to_thread(close_autocad_document_if_open, str(dwg_path))
                 set_tool_progress(_PROGRESS_TOOL, "正在读取 Revit 与 DWG 轴网")
                 grid = await call_revit_operation(
                     self.client, "DwgRevitGridData", self.client.dwg_revit_grid_data, str(dwg_path)
                 )
                 rvt_grid, dwg_grid = grid.get("rvtGrid", {}), grid.get("dwgGrid", {})
-                rvt_line, dwg_line = _points(rvt_grid), _points(dwg_grid)
-                alignment = validate_translation_alignment(
-                    rvt_line, dwg_line, allow_length_mismatch=allow_length_mismatch
+                try:
+                    rvt_line, dwg_line = _points(rvt_grid), _points(dwg_grid)
+                    alignment = validate_translation_alignment(
+                        rvt_line, dwg_line, allow_length_mismatch=allow_length_mismatch
+                    )
+                    if not alignment["valid"]:
+                        reason = alignment.get("reason", "轴网未对齐")
+                        logger.warning(f"跳过图纸 {dwg_path.name}：{reason}")
+                        skipped_drawings.append({"path": str(dwg_path), "reason": reason})
+                        continue
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"跳过无有效楼层轴网的图纸 {dwg_path.name}：{e}")
+                    skipped_drawings.append({"path": str(dwg_path), "reason": f"无有效楼层轴网: {e}"})
+                    continue
+
+                set_tool_progress(_PROGRESS_TOOL, "正在读取 DWG 图纸文字")
+                text_res = await call_revit_operation(
+                    self.client, "GetDwgText", self.client.get_dwg_text, str(dwg_path)
                 )
-                if not alignment["valid"]:
-                    raise ValueError(f"{dwg_path.name}: {alignment['reason']}")
-                await asyncio.to_thread(close_autocad_document_if_open, str(dwg_path))
-                set_tool_progress(_PROGRESS_TOOL, "正在连接 AutoCAD 2020 并等待天正加载")
+                text_items = text_res.get("data", []) if isinstance(text_res, dict) else []
+
                 floor_hint = _floor_from_path(str(dwg_path))
                 extracted, floor_entries, floor_detection = await asyncio.to_thread(
-                    _extract_rooms_and_floor_from_dwg,
-                    str(dwg_path),
+                    _extract_rooms_and_floor_from_texts,
+                    text_items,
+                    dwg_path.name,
                     fallback_floor=floor_hint,
                 )
                 # Keep compatibility with older helper implementations that
@@ -249,7 +266,11 @@ class ArRoomCreationWorkflow:
                 transformed = transform_room_texts(
                     extracted, calculate_segment_translation_vector(rvt_line, dwg_line)
                 )
-                rooms = [item for item in transformed["room_texts"] if item.get("RoomName", "").strip()]
+                rooms = [
+                    item
+                    for item in transformed["room_texts"]
+                    if item.get("RoomName") and PURE_CHINESE_PATTERN.match(item["RoomName"].strip())
+                ]
                 for floor in floor_entries:
                     room_data.append({"floor_num": floor, "room_texts": rooms})
                     per_floor_counts[str(floor)] = per_floor_counts.get(str(floor), 0) + len(rooms)
@@ -260,6 +281,20 @@ class ArRoomCreationWorkflow:
                         "detection": floor_detection,
                     }
                 )
+
+            # If all drawings were skipped or produced no room data
+            if not room_data and not unresolved_drawings:
+                self._assert_sources_unchanged(source_stats)
+                return {
+                    "status": "skipped",
+                    "reason": "所提供的 DWG 图纸均未检测到与当前模型匹配的有效楼层轴网或房间信息",
+                    "model_path": str(model),
+                    "dwg_folder_path": str(folder),
+                    "processed_drawing_count": total_drawings,
+                    "skipped_drawing_count": len(skipped_drawings),
+                    "skipped_drawings": skipped_drawings,
+                    "duration_seconds": round(time.monotonic() - started, 1),
+                }
 
             # A floor decision is required before the first Revit write.  We
             # preflight every submitted DWG so the user receives one complete
@@ -274,10 +309,11 @@ class ArRoomCreationWorkflow:
                     ),
                     "model_path": str(model),
                     "dwg_folder_path": str(folder),
-                    "processed_drawing_count": len(drawings),
+                    "processed_drawing_count": total_drawings,
                     "candidates": unresolved_drawings,
                     "drawing_floor_detection": drawing_floor_detection,
-                    "skipped_drawing_count": 0,
+                    "skipped_drawing_count": len(skipped_drawings),
+                    "skipped_drawings": skipped_drawings,
                     "duration_seconds": round(time.monotonic() - started, 1),
                 }
 
@@ -324,7 +360,7 @@ class ArRoomCreationWorkflow:
                 "update_message": update.get("msg"),
                 "room_data": room_data,
                 "drawing_floor_detection": drawing_floor_detection,
-                "skipped_drawings": [],
+                "skipped_drawings": skipped_drawings,
                 "saved_to": saved_to,
                 "saved_model_path": saved_model_path,
                 "saved_model_path_status": saved_model_path_status,
@@ -334,8 +370,9 @@ class ArRoomCreationWorkflow:
             "status": "completed",
             "model_path": str(model),
             "batch_create_summary": created.get("msg", "房间创建完成"),
-            "processed_drawing_count": len(drawings),
-            "skipped_drawing_count": 0,
+            "processed_drawing_count": total_drawings,
+            "skipped_drawing_count": len(skipped_drawings),
+            "skipped_drawings": skipped_drawings,
             "named_room_count": sum(per_floor_counts.values()),
             "per_floor_named_count": per_floor_counts,
             "message": update.get("msg", "房间命名完成"),

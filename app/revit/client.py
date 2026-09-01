@@ -188,6 +188,14 @@ class RevitApiClient:
         """Apply an approved room-name update payload to the active Revit document."""
         return await self._post_operation("/UpdateRoomName", {"RoomData": room_data}, wait_forever)
 
+    async def base_point_setting_is_correct(self, *, wait_forever: bool = False) -> Dict[str, Any]:
+        """Verify if base point parameters are already complete in the active Revit document."""
+        return await self._post_operation("/BasePointSettingIsCorrect", None, wait_forever)
+
+    async def get_dwg_text(self, dwg_file_path: str, *, wait_forever: bool = False) -> Dict[str, Any]:
+        """Read all text entities, coordinates, and layers directly from a DWG file via Revit."""
+        return await self._post_operation("/GetDwgText", {"dwgFilePath": dwg_file_path}, wait_forever)
+
     async def base_point_setting(self, data: Dict[str, Any], *, wait_forever: bool = False) -> Dict[str, Any]:
         """Apply extracted DWG survey/base-point data to the active Revit document."""
         return await self._post_operation("/BasePointSetting", data, wait_forever)

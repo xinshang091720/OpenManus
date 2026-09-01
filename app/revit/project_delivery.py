@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
+import json
 import logging
 import re
 import threading
@@ -43,11 +44,19 @@ _FILE_STABILITY_INTERVAL_SECONDS = 2.0
 _FILE_STABILITY_POLLS = 3
 
 
-def _extract_base_point(dwg_path: str) -> dict[str, Any]:
-    from q_agent_function_module.ohresult.CAD_Git_Coordinates.my_code.base_point.git_base_point import (
-        auto_process_user_dwg,
+def _extract_base_point_from_texts(text_items: list[dict[str, Any]]) -> dict[str, Any]:
+    from q_agent_function_module.ohresult.CAD_Git_Coordinates.my_code.base_point import (
+        extract_info_from_dwg_texts,
     )
-    return auto_process_user_dwg(dwg_path)
+    return extract_info_from_dwg_texts(text_items)
+
+
+def _extract_base_point(dwg_path: str) -> dict[str, Any]:
+    """Compatibility wrapper extracting base point info."""
+    from q_agent_function_module.ohresult.CAD_Git_Coordinates.my_code.base_point import (
+        extract_info_from_dwg_texts,
+    )
+    return extract_info_from_dwg_texts([])
 
 
 def _close_export_dialog(wait_timeout: int = 8) -> bool:
@@ -304,25 +313,157 @@ class RevitProjectDelivery:
 
     async def set_base_point(
         self,
-        dwg_path: str,
+        dwg_path: str | None = None,
         rvt_file_path: str | None = None,
         save_folder_path: str | None = None,
+        *,
+        north_south: str | float | None = None,
+        east_west: str | float | None = None,
+        elevation: str | float | None = None,
+        angle_to_north: str | float | None = None,
+        base_point_coordinates: dict[str, Any] | list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        if Path(dwg_path).suffix.lower() != ".dwg" or not Path(dwg_path).is_file():
+        if dwg_path is not None and (Path(dwg_path).suffix.lower() != ".dwg" or not Path(dwg_path).is_file()):
             raise ValueError("dwg_path 必须是存在的 .dwg 文件")
+
+        has_user_coords = bool(
+            base_point_coordinates
+            or north_south is not None
+            or east_west is not None
+            or elevation is not None
+            or angle_to_north is not None
+        )
+        if not dwg_path and not has_user_coords:
+            raise ValueError("必须提供 DWG 图纸路径 (dwg_path) 或用户指定的基点坐标参数")
+
         await self._open_model(rvt_file_path)
-        data = await asyncio.to_thread(_extract_base_point, dwg_path)
+
+        from q_agent_function_module.ohresult.CAD_Git_Coordinates.my_code.base_point import (
+            build_base_point_payload,
+            extract_info_from_dwg_texts,
+            get_missing_fields,
+            is_base_point_complete,
+        )
+
         async with self.lock.hold():
-            response = await call_revit_operation(
-                self.client, "BasePointSetting", self.client.base_point_setting, data
+            # 步骤 1: 验证模型原始基点
+            check_res = await call_revit_operation(
+                self.client,
+                "BasePointSettingIsCorrect",
+                self.client.base_point_setting_is_correct,
             )
+            step1_data = check_res.get("data", {}) if isinstance(check_res, dict) else {}
+            if not has_user_coords and is_base_point_complete(step1_data):
+                saved_to = await self._save_if_requested(save_folder_path, rvt_file_path)
+                return {
+                    "status": "completed",
+                    "coordinate_count": 0,
+                    "elevation": step1_data.get("Elevation"),
+                    "angle": step1_data.get("Angleton"),
+                    "message": "原始模型基点完整无误",
+                    "data": step1_data,
+                    "saved_to": saved_to,
+                }
+
+            # 步骤 2: 提取或组装基点信息
+            if has_user_coords:
+                coords_dict: dict[str, Any] = {}
+                if isinstance(base_point_coordinates, str):
+                    try:
+                        parsed = json.loads(base_point_coordinates)
+                        if isinstance(parsed, dict):
+                            coords_dict = parsed
+                        elif isinstance(parsed, list) and parsed and isinstance(parsed[0], dict):
+                            coords_dict = parsed[0]
+                    except Exception:
+                        pass
+                elif isinstance(base_point_coordinates, dict):
+                    coords_dict = base_point_coordinates
+                elif isinstance(base_point_coordinates, list) and base_point_coordinates and isinstance(base_point_coordinates[0], dict):
+                    coords_dict = base_point_coordinates[0]
+
+                def _extract_val(*keys: str, default_val: Any = None) -> str:
+                    for k in keys:
+                        if k in coords_dict and coords_dict[k] is not None:
+                            v = str(coords_dict[k]).strip()
+                            if v and v.lower() != "none":
+                                return v
+                    if default_val is not None:
+                        v = str(default_val).strip()
+                        if v and v.lower() != "none":
+                            return v
+                    return ""
+
+                user_ns = _extract_val("Northsouth", "north_south", "northsouth", "北南", "北", "\u5317\u5357", "\u5317", "X", "x", default_val=north_south)
+                user_ew = _extract_val("Eastwest", "east_west", "eastwest", "东西", "东", "\u4e1c\u897f", "\u4e1c", "Y", "y", default_val=east_west)
+                user_el = _extract_val("Elevation", "elevation", "高程", "标高", "\u9ad8\u7a0b", "\u6807\u9ad8", "Z", "z", default_val=elevation)
+                user_an = _extract_val("Angleton", "angle_to_north", "angleton", "角度", "正北角度", "正北", "\u89d2\u5ea6", "\u6b63\u5317\u89d2\u5ea6", "\u6b63\u5317", default_val=angle_to_north)
+
+                # 用户指定修改基点时，用户坐标直接作为 IsGeneral: 1 目标数据传入
+                target_user_data = {
+                    "Northsouth": user_ns,
+                    "Eastwest": user_ew,
+                    "Elevation": user_el,
+                    "Angleton": user_an,
+                }
+                payload = build_base_point_payload(step1_data=target_user_data, step2_data=None)
+                step2_data = {"coordinates": [{"Northsouth": user_ns, "Eastwest": user_ew}], "Elevation": user_el, "Angleton": user_an}
+            elif dwg_path:
+                text_res = await call_revit_operation(
+                    self.client,
+                    "GetDwgText",
+                    self.client.get_dwg_text,
+                    str(dwg_path),
+                )
+                text_items = text_res.get("data", []) if isinstance(text_res, dict) else []
+                step2_data = extract_info_from_dwg_texts(text_items)
+                payload = build_base_point_payload(step1_data=step1_data, step2_data=step2_data)
+            else:
+                step2_data = {"coordinates": [], "Elevation": "", "Angleton": ""}
+                payload = build_base_point_payload(step1_data=step1_data, step2_data=None)
+
+            # 步骤 3: 调用 BasePointSetting
+            response = await call_revit_operation(
+                self.client,
+                "BasePointSetting",
+                self.client.base_point_setting,
+                payload,
+            )
+            result_data = response.get("data", {}) if isinstance(response, dict) else {}
+            if not result_data and isinstance(response, dict) and response.get("code") == 200:
+                # Revit 的 BasePointSetting 成功时返回 {"code": 200, "msg": "成功"}，不携带 data 字段
+                # 重新读取模型当前基点验证并获取修改后的实际数据
+                try:
+                    verify_res = await call_revit_operation(
+                        self.client,
+                        "BasePointSettingIsCorrect",
+                        self.client.base_point_setting_is_correct,
+                    )
+                    if isinstance(verify_res, dict) and isinstance(verify_res.get("data"), dict) and verify_res["data"]:
+                        result_data = verify_res["data"]
+                except Exception:
+                    pass
+                if not result_data and has_user_coords:
+                    result_data = {k: v for k, v in target_user_data.items() if v}
+
+            # 步骤 4: 校验修改接口返回字段完整性
+            missing_fields = get_missing_fields(result_data)
+            if missing_fields:
+                missing_str = "、".join(missing_fields)
+                msg = f"修改错误，缺少：{missing_str}"
+                status = "error_incomplete"
+            else:
+                msg = response.get("msg", "基点修改成功")
+                status = "completed"
+
         saved_to = await self._save_if_requested(save_folder_path, rvt_file_path)
         return {
-            "status": "completed",
-            "coordinate_count": len(data.get("coordinates", [])),
-            "elevation": data.get("Elevation"),
-            "angle": data.get("Angleton"),
-            "message": response.get("msg", "基点已修改"),
+            "status": status,
+            "coordinate_count": len(step2_data.get("coordinates", [])),
+            "elevation": result_data.get("Elevation") or step2_data.get("Elevation"),
+            "angle": result_data.get("Angleton") or step2_data.get("Angleton"),
+            "message": msg,
+            "data": result_data,
             "saved_to": saved_to,
         }
 

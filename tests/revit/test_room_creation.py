@@ -44,6 +44,15 @@ class RoomClient:
             "dwgGrid": {"AxisCode": "A-1", "Begin_Position": [20, 30, 0], "End_Position": [30, 30, 0]},
         }
 
+    async def get_dwg_text(self, path, *, wait_forever=False):
+        self.calls.append(("get_dwg_text", path, wait_forever))
+        return {
+            "code": 200,
+            "data": [
+                {"Text": "办公室", "Text_coordinates": "(1, 2, 0)", "Text_layer": "0"},
+            ],
+        }
+
     async def update_room_name(self, payload, *, wait_forever=False):
         self.calls.append(("update", wait_forever))
         self.updates.append(payload)
@@ -83,17 +92,16 @@ def test_ar_room_creation_processes_every_project_dwg_and_orders_floor_data(tmp_
     }
     seen = []
 
-    def extract(path, *, fallback_floor=None):
-        name = Path(path).name
+    def extract(text_items, dwg_name, *, fallback_floor=None):
+        name = dwg_name
         seen.append((name, fallback_floor))
         return (
-            {"room_texts": [{"RoomName": f"{name}-room", "XYZ": "(1, 2, 0)"}], "filtered_out": []},
+            {"room_texts": [{"RoomName": "办公室", "XYZ": "(1, 2, 0)"}], "filtered_out": []},
             floors_by_name[name],
             {"source": "test"},
         )
 
-    monkeypatch.setattr("app.revit.room_creation.close_autocad_document_if_open", lambda _: False)
-    monkeypatch.setattr("app.revit.room_creation._extract_rooms_and_floor_from_dwg", extract)
+    monkeypatch.setattr("app.revit.room_creation._extract_rooms_and_floor_from_texts", extract)
     client = RoomClient()
     workflow = ArRoomCreationWorkflow(client)
     try:
@@ -101,7 +109,14 @@ def test_ar_room_creation_processes_every_project_dwg_and_orders_floor_data(tmp_
     finally:
         workflow.close()
 
-    assert [item[0] for item in client.calls] == ["open", "grid", "grid", "grid", "grid", "create", "update", "save"]
+    assert [item[0] for item in client.calls] == [
+        "open",
+        "grid", "get_dwg_text",
+        "grid", "get_dwg_text",
+        "grid", "get_dwg_text",
+        "grid", "get_dwg_text",
+        "create", "update", "save",
+    ]
     assert {Path(item[1]).name for item in client.calls if item[0] == "grid"} == set(floors_by_name)
     assert {name for name, _ in seen} == set(floors_by_name)
     assert dict(seen)[first_floor.name] == 1
@@ -154,11 +169,10 @@ def test_room_creation_processes_multiple_drawings_that_map_to_the_same_floor(tm
     folder.mkdir()
     (folder / "one-B1.dwg").write_bytes(b"dwg")
     (folder / "two-B1.dwg").write_bytes(b"dwg")
-    monkeypatch.setattr("app.revit.room_creation.close_autocad_document_if_open", lambda _: False)
     monkeypatch.setattr(
-        "app.revit.room_creation._extract_rooms_and_floor_from_dwg",
-        lambda _path, *, fallback_floor=None: (
-            {"room_texts": [{"RoomName": "101", "XYZ": "(1, 2, 0)"}]},
+        "app.revit.room_creation._extract_rooms_and_floor_from_texts",
+        lambda _items, _name, *, fallback_floor=None: (
+            {"room_texts": [{"RoomName": "办公室", "XYZ": "(1, 2, 0)"}]},
             [fallback_floor],
             {"source": "filename_hint"},
         ),
@@ -179,19 +193,18 @@ def test_room_creation_does_not_create_rooms_when_dwg_preflight_fails(tmp_path, 
     folder = tmp_path / "dwg"
     folder.mkdir()
     (folder / "floor-B1.dwg").write_bytes(b"dwg")
-    monkeypatch.setattr("app.revit.room_creation.close_autocad_document_if_open", lambda _: False)
     monkeypatch.setattr(
-        "app.revit.room_creation._extract_rooms_and_floor_from_dwg",
-        lambda _, **__: (_ for _ in ()).throw(RuntimeError("AutoCAD unavailable")),
+        "app.revit.room_creation._extract_rooms_and_floor_from_texts",
+        lambda _items, _name, **__: (_ for _ in ()).throw(RuntimeError("Extraction failed")),
     )
     client = RoomClient()
     workflow = ArRoomCreationWorkflow(client)
     try:
-        with pytest.raises(RuntimeError, match="AutoCAD unavailable"):
+        with pytest.raises(RuntimeError, match="Extraction failed"):
             asyncio.run(workflow.run(str(model), str(folder), "AR"))
     finally:
         workflow.close()
-    assert [item[0] for item in client.calls] == ["open", "grid"]
+    assert [item[0] for item in client.calls] == ["open", "grid", "get_dwg_text"]
 
 
 def test_long_operation_continues_when_health_is_unsupported():
@@ -224,3 +237,39 @@ def test_long_operation_stops_as_unknown_at_explicit_timeout_without_retry():
             timeout_seconds=0.005,
         ))
     assert calls == [True]
+
+
+def test_room_creation_skips_dwg_without_valid_grid_and_continues(tmp_path):
+    model = tmp_path / "project_AR-B2.rvt"
+    model.write_bytes(b"rvt")
+    folder = tmp_path / "dwg"
+    folder.mkdir()
+    # 1 valid floor plan + 1 site plan (no grid)
+    (folder / "floor-1F.dwg").write_bytes(b"dwg")
+    (folder / "site-plan.dwg").write_bytes(b"dwg")
+
+    class MixedGridRoomClient(RoomClient):
+        async def dwg_revit_grid_data(self, path, *, wait_forever=False):
+            self.calls.append(("grid", path, wait_forever))
+            if "site-plan" in str(path):
+                return {
+                    "code": 200,
+                    "msg": "返回dwg轴网跟rvt轴网数据",
+                    "rvtGrid": {"AxisCode": None, "Begin_Position": None, "End_Position": None},
+                    "dwgGrid": {"AxisCode": None, "Begin_Position": None, "End_Position": None},
+                }
+            return await super().dwg_revit_grid_data(path, wait_forever=wait_forever)
+
+    client = MixedGridRoomClient()
+    workflow = ArRoomCreationWorkflow(client)
+    try:
+        result = asyncio.run(workflow.run(str(model), str(folder), "AR"))
+    finally:
+        workflow.close()
+
+    assert result["status"] == "completed"
+    assert result["processed_drawing_count"] == 2
+    assert result["skipped_drawing_count"] == 1
+    assert "site-plan.dwg" in result["skipped_drawings"][0]["path"]
+    assert result["named_room_count"] == 1
+

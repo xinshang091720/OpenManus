@@ -650,3 +650,33 @@ def test_runtime_turns_room_floor_selection_into_input_request():
     assert "请确认 DWG 对应楼层" in question
     assert r"C:\project\六~三十层平面图.dwg" in question
     assert "6, 30" in question
+
+
+def test_runtime_manager_formats_rate_limit_and_budget_error_friendly():
+    class FailingAgent:
+        def __init__(self, sink, **_):
+            self.sink = sink
+            self.memory = Memory()
+
+        def update_memory(self, *args):
+            pass
+
+        async def run(self, _):
+            raise RuntimeError("RetryError[<Future at 0x123 state=finished raised RateLimitError>]")
+
+    async def make_failing_agent(sink, *args, **kwargs):
+        return FailingAgent(sink)
+
+    manager = RuntimeManager(agent_factory=make_failing_agent)
+    run = asyncio.run(manager.create_run(runtime_request()))
+
+    async def get_events():
+        events = []
+        async for event in manager.stream_events(run.run_id):
+            events.append(event)
+        return events
+
+    events = asyncio.run(get_events())
+    failed_event = next(e for e in events if e.event == "run_failed")
+    assert failed_event.data["error"] == "模型执行失败，请检查余额是否充足，如果不是请联系客服"
+

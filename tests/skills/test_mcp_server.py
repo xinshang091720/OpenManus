@@ -79,3 +79,37 @@ def test_combined_ifc_delivery_tool_exposes_a_long_wait_default():
     signature = MCPServer()._build_signature(tool.to_param()["function"])
 
     assert signature.parameters["timeout_seconds"].default == 7200
+
+
+def test_mcp_signature_for_revit_set_base_point_allows_optional_parameters():
+    from app.tool.revit_delivery import RevitSetBasePoint
+
+    tool = RevitSetBasePoint()
+    server = MCPServer()
+    server.register_tool(tool)
+
+    signature = server._build_signature(tool.to_param()["function"])
+    assert signature.parameters["north_south"].default is None
+    assert signature.parameters["dwg_path"].default is None
+    registered = server.server._tool_manager.get_tool("revit_set_base_point")
+    assert registered is not None
+
+    # Test validating float and string inputs via FastMCP's generated arg_model
+    model = registered.fn_metadata.arg_model
+    parsed_nums = model.model_validate({
+        "north_south": 2506045399.0,
+        "east_west": 507491908.0,
+        "elevation": 73900.0,
+        "angle_to_north": 216,
+    })
+    assert parsed_nums.north_south == 2506045399.0
+    assert parsed_nums.dwg_path is None
+
+    parsed_strs = model.model_validate({
+        "north_south": "2506045399.000",
+        "east_west": "507491908.000",
+        "elevation": "73900.000",
+        "angle_to_north": "216",
+    })
+    assert parsed_strs.north_south == "2506045399.000"
+    assert parsed_strs.dwg_path is None

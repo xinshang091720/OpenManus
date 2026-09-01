@@ -32,6 +32,15 @@ class _RoomClient:
             "dwgGrid": {"AxisCode": "A-1", "Begin_Position": [20, 30, 0], "End_Position": [30, 30, 0]},
         }
 
+    async def get_dwg_text(self, path, *, wait_forever=False):
+        self.calls.append(("get_dwg_text", path, wait_forever))
+        return {
+            "code": 200,
+            "data": [
+                {"Text": "办公室", "Text_coordinates": "(1, 2, 0)", "Text_layer": "0"},
+            ],
+        }
+
     async def batch_create_rooms(self, *, wait_forever=False):
         self.calls.append(("create", wait_forever))
         return {"code": 200, "msg": "rooms created"}
@@ -46,41 +55,18 @@ class _RoomClient:
         return {"code": 200, "msg": "saved"}
 
 
-def _stub_dxf_pipeline(tmp_path, monkeypatch, floor_info):
-    temporary_dxf = tmp_path / "temporary.dxf"
-
-    def convert(_dwg_path):
-        temporary_dxf.write_bytes(b"dxf")
-        return str(temporary_dxf)
-
-    monkeypatch.setattr(
-        "q_agent_function_module.ohresult.CAD_Git_Coordinates.my_code.room_coordinates.dwg_room_extractor_main._convert_dwg_to_dxf_via_autocad",
-        convert,
-    )
-    monkeypatch.setattr(
-        "q_agent_function_module.ohresult.CAD_Git_Coordinates.my_code.room_coordinates.dwg_room_extractor.process_dwg_room_extraction",
-        lambda _path: {"room_texts": [], "filtered_out": []},
-    )
-    monkeypatch.setattr(
-        "q_agent_function_module.ohresult.CAD_Git_Coordinates.my_code.room_coordinates.git_cad_floor.get_cad_floor_info",
-        lambda _path: floor_info,
-    )
-    monkeypatch.setattr("app.revit.room_sync.set_tool_progress", lambda *_args, **_kwargs: None)
-    return temporary_dxf
-
-
-def test_drawing_title_overrides_filename_hint_and_expands_standard_floor_range(tmp_path, monkeypatch):
+def test_drawing_title_overrides_filename_hint_and_expands_standard_floor_range():
     """A filename candidate cannot bypass an explicit title inside the drawing."""
-    source = tmp_path / "三层平面图.dwg"
-    source.write_bytes(b"dwg")
-    temporary_dxf = _stub_dxf_pipeline(
-        tmp_path,
-        monkeypatch,
-        {"matched_text": "六~三十层平面图", "min_floor": 6.0, "max_floor": 30.0},
-    )
+    from app.revit.room_sync import _extract_rooms_and_floor_from_texts
 
-    _rooms, floors, detection = _extract_rooms_and_floor_from_dwg(
-        str(source),
+    text_items = [
+        {"Text": "六~三十层平面图", "Text_coordinates": "(0, 0, 0)", "Text_layer": "TITLE"},
+        {"Text": "办公室", "Text_coordinates": "(10, 20, 0)", "Text_layer": "ROOM"},
+    ]
+
+    _rooms, floors, detection = _extract_rooms_and_floor_from_texts(
+        text_items,
+        dwg_filename="三层平面图.dwg",
         fallback_floor=3,
     )
 
@@ -89,7 +75,6 @@ def test_drawing_title_overrides_filename_hint_and_expands_standard_floor_range(
     assert detection["source"] == "drawing_text"
     assert detection["matched_text"] == "六~三十层平面图"
     assert detection["filename_hint"] == 3
-    assert not temporary_dxf.exists()
 
 
 def test_filename_range_is_not_forced_into_one_floor_and_does_not_raise():
@@ -113,10 +98,9 @@ def test_unresolved_floor_returns_selection_before_any_revit_write(tmp_path, mon
     drawing = drawings / "无明确楼层图纸.dwg"
     drawing.write_bytes(b"dwg")
 
-    monkeypatch.setattr("app.revit.room_creation.close_autocad_document_if_open", lambda _path: False)
     monkeypatch.setattr(
-        "app.revit.room_creation._extract_rooms_and_floor_from_dwg",
-        lambda _path, *, fallback_floor=None: (
+        "app.revit.room_creation._extract_rooms_and_floor_from_texts",
+        lambda _items, _name, *, fallback_floor=None: (
             {"room_texts": [{"RoomName": "设备房", "XYZ": "(1, 2, 0)"}], "filtered_out": []},
             [],
             {
@@ -139,7 +123,7 @@ def test_unresolved_floor_returns_selection_before_any_revit_write(tmp_path, mon
 
     assert result["status"] == "selection_required"
     assert result["candidates"] == [{"dwg_path": str(drawing), "floor_candidates": []}]
-    assert [call[0] for call in client.calls] == ["open", "grid"]
+    assert [call[0] for call in client.calls] == ["open", "grid", "get_dwg_text"]
     assert client.updates == []
 
 
@@ -152,10 +136,9 @@ def test_user_floor_override_resolves_ambiguous_drawing_before_revit_write(tmp_p
     drawing = drawings / "六~三十层标准层图.dwg"
     drawing.write_bytes(b"dwg")
 
-    monkeypatch.setattr("app.revit.room_creation.close_autocad_document_if_open", lambda _path: False)
     monkeypatch.setattr(
-        "app.revit.room_creation._extract_rooms_and_floor_from_dwg",
-        lambda _path, *, fallback_floor=None: (
+        "app.revit.room_creation._extract_rooms_and_floor_from_texts",
+        lambda _items, _name, *, fallback_floor=None: (
             {"room_texts": [{"RoomName": "标准层房间", "XYZ": "(1, 2, 0)"}], "filtered_out": []},
             [],
             {"status": "selection_required", "source": "unresolved", "candidates": []},
@@ -183,4 +166,4 @@ def test_user_floor_override_resolves_ambiguous_drawing_before_revit_write(tmp_p
 
     assert result["status"] == "completed"
     assert [item["floor_num"] for item in client.updates[0]] == list(range(6, 31))
-    assert [call[0] for call in client.calls] == ["open", "grid", "create", "update", "save"]
+    assert [call[0] for call in client.calls] == ["open", "grid", "get_dwg_text", "create", "update", "save"]

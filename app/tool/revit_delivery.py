@@ -11,24 +11,54 @@ from app.tool.base import BaseTool, ToolResult
 
 class RevitSetBasePoint(BaseTool):
     name: str = "revit_set_base_point"
-    description: str = "Extracts base-point coordinates from one supplied DWG and applies them to the active Revit model."
+    description: str = (
+        "Applies base-point coordinates to the active Revit model. "
+        "Coordinates can be directly specified by user decision (north_south, east_west, elevation, angle_to_north, base_point_coordinates) "
+        "or extracted automatically from a supplied DWG drawing (dwg_path)."
+    )
     parameters: dict = {
-        "type": "object", "properties": {
-            "dwg_path": {"type": "string"},
+        "type": "object",
+        "properties": {
+            "dwg_path": {"type": "string", "description": "Optional DWG file path to extract base point from."},
+            "north_south": {"type": "string", "description": "Optional user-specified North-South coordinate (X)."},
+            "east_west": {"type": "string", "description": "Optional user-specified East-West coordinate (Y)."},
+            "elevation": {"type": "string", "description": "Optional user-specified elevation (Z)."},
+            "angle_to_north": {"type": "string", "description": "Optional user-specified true north angle."},
+            "base_point_coordinates": {
+                "type": "object",
+                "description": "Optional dictionary of coordinate fields (Northsouth, Eastwest, Elevation, Angleton).",
+            },
             "rvt_file_path": {"type": "string", "description": "Optional model to open before modifying its base point."},
             "save_folder_path": {"type": "string", "description": "Optional safe result folder for SaveAs after success."},
         },
-        "required": ["dwg_path"], "additionalProperties": False,
+        "additionalProperties": False,
     }
     client: Any = Field(default_factory=RevitApiClient, exclude=True)
 
     async def execute(
-        self, dwg_path: str, rvt_file_path: str | None = None, save_folder_path: str | None = None
+        self,
+        dwg_path: str | None = None,
+        rvt_file_path: str | None = None,
+        save_folder_path: str | None = None,
+        north_south: str | float | int | None = None,
+        east_west: str | float | int | None = None,
+        elevation: str | float | int | None = None,
+        angle_to_north: str | float | int | None = None,
+        base_point_coordinates: dict[str, Any] | list[dict[str, Any]] | None = None,
     ) -> ToolResult:
         workflow = RevitProjectDelivery(self.client)
         try:
             return self.success_response(
-                await workflow.set_base_point(dwg_path, rvt_file_path, save_folder_path)
+                await workflow.set_base_point(
+                    dwg_path=dwg_path,
+                    rvt_file_path=rvt_file_path,
+                    save_folder_path=save_folder_path,
+                    north_south=str(north_south) if north_south is not None else None,
+                    east_west=str(east_west) if east_west is not None else None,
+                    elevation=str(elevation) if elevation is not None else None,
+                    angle_to_north=str(angle_to_north) if angle_to_north is not None else None,
+                    base_point_coordinates=base_point_coordinates,
+                )
             )
         except (ValueError, OSError, RuntimeError) as error:
             return self.fail_response(str(error))

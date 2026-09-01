@@ -4,7 +4,7 @@ import argparse
 import asyncio
 import json
 from inspect import Parameter, Signature
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 
 from mcp.server.fastmcp import FastMCP
 
@@ -176,26 +176,29 @@ class MCPServer:
         # Follow original type mapping
         for param_name, param_details in param_props.items():
             param_type = param_details.get("type", "")
+            is_required = param_name in required_params
             default = (
                 Parameter.empty
-                if param_name in required_params
+                if is_required
                 else param_details.get("default", None)
             )
 
-            # Map JSON Schema types to Python types (same as original)
-            annotation = Any
+            # Map JSON Schema types to Python types
+            base_type = Any
             if param_type == "string":
-                annotation = str
-            elif param_type == "integer":
-                annotation = int
-            elif param_type == "number":
-                annotation = float
+                base_type = Union[str, int, float]
+            elif param_type in ("integer", "number"):
+                base_type = Union[int, float, str]
             elif param_type == "boolean":
-                annotation = bool
+                base_type = Union[bool, str, int]
             elif param_type == "object":
-                annotation = dict
+                base_type = Union[dict, str]
             elif param_type == "array":
-                annotation = list
+                base_type = Union[list, str]
+            elif isinstance(param_type, list):
+                base_type = Union[str, int, float]
+
+            annotation = base_type if is_required else Optional[base_type]
 
             # Create parameter with same structure as original
             param = Parameter(
