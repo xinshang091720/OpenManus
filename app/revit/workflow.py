@@ -257,31 +257,34 @@ class RevitIfcAssignmentWorkflow:
             program_low_confidence = chosen["score"] <= 0
             group_reports.append({"group_key": group_key, "count": len(members), "hierarchy_terms": hierarchy_terms(representative), "route": route, "grouping_keyword": grouping_keyword, "grouping_filter_fallback": grouping_filter_fallback, "candidates": ranked, "selected": chosen, "model_reason": model_reason, "review_status": review_status, "program_low_confidence": program_low_confidence, "low_confidence": program_low_confidence or review_status != "accepted"})
 
-        assignment_message = "没有未匹配构件，无需赋参"
         try:
-            if assignments:
-                assigned = await call_revit_operation(
-                    self.client,
-                    "OneClickAssignment",
-                    self.client.one_click_assignment,
-                    standard_id,
-                    assignments,
-                )
-                assignment_message = assigned.get("msg", assignment_message)
+            assigned = await call_revit_operation(
+                self.client,
+                "OneClickAssignment",
+                self.client.one_click_assignment,
+                standard_id,
+                assignments,
+            )
+            assignment_message = assigned.get("msg", "一键赋值操作完成")
         except RevitApiError as error:
             raise WorkflowError("assign", str(error)) from error
+
+        total_match = re.search(r"合计\s*(\d+)\s*个完成\s*(\d+)\s*个", assignment_message)
+        total_elements = int(total_match.group(1)) if total_match else None
+        already_matched_count = (
+            max(0, total_elements - len(elements)) if total_elements is not None else None
+        )
+        assigned_count = len(assignments) if assignments else (int(total_match.group(2)) if total_match else 0)
 
         report = {
             "standard_id": standard_id,
             "marjor_name": major,
             "clear_existing": clear_existing,
             "identify_attempts": identify_attempts,
-            # The current plugin deliberately returns only elements whose IdentName is empty.
-            # It does not expose a total-model count or a count of its earlier rule matches.
-            "total_elements": None,
-            "already_matched_count": None,
+            "total_elements": total_elements,
+            "already_matched_count": already_matched_count,
             "returned_unmatched_count": len(elements),
-            "assigned_count": len(assignments),
+            "assigned_count": assigned_count,
             "low_confidence_group_count": sum(1 for item in group_reports if item["low_confidence"]),
             "review_batch_size": self.review_batch_size,
             "review_batch_count": len(batches),

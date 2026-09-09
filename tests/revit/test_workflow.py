@@ -312,3 +312,30 @@ def test_workflow_reports_the_actual_failing_stage_and_endpoint():
         ))
 
     assert "endpoint=/OneClickIdentifier" in str(error.value)
+
+
+def test_workflow_commits_assignment_even_when_unmatched_elements_is_empty():
+    class FullyMatchedClient(RecordingClient):
+        async def one_click_identifier(self, standard_id, major):
+            self.calls.append(("identify", standard_id, major))
+            return {"code": 200, "data": []}
+
+        async def one_click_assignment(self, standard_id, data):
+            self.calls.append(("assign", standard_id))
+            self.assignments = data
+            return {"code": 200, "msg": "一键赋值操作完成，合计705个完成705个。"}
+
+    client = FullyMatchedClient()
+    report = asyncio.run(
+        RevitIfcAssignmentWorkflow(client).run(
+            r"C:\models\project.rvt", discipline="EL"
+        )
+    )
+    assert ("assign", 109003) in client.calls
+    assert client.assignments == []
+    assert report["returned_unmatched_count"] == 0
+    assert report["total_elements"] == 705
+    assert report["already_matched_count"] == 705
+    assert report["assigned_count"] == 705
+    assert "合计705个完成705个" in report["assignment_message"]
+

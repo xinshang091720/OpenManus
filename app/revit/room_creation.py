@@ -189,11 +189,10 @@ class ArRoomCreationWorkflow:
             for index, dwg_path in enumerate(drawings, start=1):
                 set_tool_progress(
                     _PROGRESS_TOOL,
-                    f"正在处理第 {index}/{total_drawings} 张 DWG：{dwg_path.name}",
+                    f"正在读取图纸 [{index}/{total_drawings}] {dwg_path.name} 轴网数据",
                     drawing_index=index,
                     drawing_count=total_drawings,
                 )
-                set_tool_progress(_PROGRESS_TOOL, "正在读取 Revit 与 DWG 轴网")
                 grid = await call_revit_operation(
                     self.client, "DwgRevitGridData", self.client.dwg_revit_grid_data, str(dwg_path)
                 )
@@ -213,7 +212,12 @@ class ArRoomCreationWorkflow:
                     skipped_drawings.append({"path": str(dwg_path), "reason": f"无有效楼层轴网: {e}"})
                     continue
 
-                set_tool_progress(_PROGRESS_TOOL, "正在读取 DWG 图纸文字")
+                set_tool_progress(
+                    _PROGRESS_TOOL,
+                    f"正在提取图纸 [{index}/{total_drawings}] {dwg_path.name} 房间文字与标高",
+                    drawing_index=index,
+                    drawing_count=total_drawings,
+                )
                 text_res = await call_revit_operation(
                     self.client, "GetDwgText", self.client.get_dwg_text, str(dwg_path)
                 )
@@ -304,8 +308,8 @@ class ArRoomCreationWorkflow:
                 return {
                     "status": "selection_required",
                     "message": (
-                        "以下 DWG 无法唯一确认楼层；尚未创建、命名或另存任何 Revit 房间。"
-                        "请确认每个绝对路径对应的楼层后继续，例如“该图为 6 至 30 层”。"
+                        "以下 DWG 图纸中检测到多个不同的楼层标记，无法自动确认对应楼层；尚未创建、命名或另存任何 Revit 房间。"
+                        "请确认对应楼层后继续（例如回复“第1个是5层”或“该图为 6 至 30 层”）："
                     ),
                     "model_path": str(model),
                     "dwg_folder_path": str(folder),
@@ -324,11 +328,11 @@ class ArRoomCreationWorkflow:
 
             # Preflight all CAD extraction before mutating Revit.  A failed
             # conversion must not leave newly created, unnamed rooms behind.
-            set_tool_progress(_PROGRESS_TOOL, "正在创建 Revit 房间")
+            set_tool_progress(_PROGRESS_TOOL, f"正在 Revit 中批量创建房间（共提取 {len(room_data)} 个房间）")
             created = await call_revit_operation(
                 self.client, "BatchCreateRooms", self.client.batch_create_rooms
             )
-            set_tool_progress(_PROGRESS_TOOL, "正在写入房间名称")
+            set_tool_progress(_PROGRESS_TOOL, f"正在向 Revit 房间写入名称与编号（共 {len(room_data)} 个）")
             update = await call_revit_operation(
                 self.client, "UpdateRoomName", self.client.update_room_name, room_data
             )
@@ -343,7 +347,7 @@ class ArRoomCreationWorkflow:
         # live Revit session.
         requested_save_folder = save_folder_path or str(model.parent / "result")
         target = prepare_save_folder(requested_save_folder, str(model))
-        set_tool_progress(_PROGRESS_TOOL, "正在另存结果模型")
+        set_tool_progress(_PROGRESS_TOOL, f"正在将修改后的模型另存到目录：{target.name}")
         save_before = snapshot_folder_files(target)
         async with self.lock.hold():
             await call_revit_operation(self.client, "SaveAs", self.client.save_as, str(target))

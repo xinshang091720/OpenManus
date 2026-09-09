@@ -241,6 +241,7 @@ class RuntimeManus(Manus):
     max_steps: int = 100
     tool_progress_interval_seconds: float = 30.0
     revit_write_failure: bool = False
+    completed_milestones: list[str] = Field(default_factory=list)
 
     _REVIT_WRITE_TOOLS = {
         "revit_run_ifc_assignment",
@@ -252,6 +253,78 @@ class RuntimeManus(Manus):
         "revit_save_as",
         "revit_export_ifc",
     }
+
+    @staticmethod
+    def _parse_arguments(arguments: Any) -> dict[str, Any]:
+        if isinstance(arguments, dict):
+            return arguments
+        if isinstance(arguments, str) and arguments.strip():
+            with contextlib.suppress(Exception):
+                parsed = json.loads(arguments)
+                if isinstance(parsed, dict):
+                    return parsed
+        return {}
+
+    @classmethod
+    def _format_completed_milestone(
+        cls, tool_name: str, tool_args: Any, observation: str
+    ) -> str | None:
+        normalized = tool_name.removeprefix("mcp_revit_local_").casefold()
+        args = cls._parse_arguments(tool_args)
+        payload = {}
+        start = observation.find("{")
+        if start >= 0:
+            with contextlib.suppress(Exception):
+                payload = json.loads(observation[start:])
+
+        if normalized in {"revit_open_project_model", "revit_open_file"}:
+            path = payload.get("model_path") or args.get("model_path") or args.get("path") or ""
+            model_name = Path(str(path)).name if path else ""
+            version = payload.get("model_version")
+            ver_text = f"（Revit {version}）" if version else ""
+            return f"Revit 建筑模型已成功打开：{model_name}{ver_text}" if model_name else "Revit 建筑模型已成功打开"
+
+        if normalized == "revit_create_and_name_ar_rooms":
+            room_count = payload.get("room_count")
+            named_count = payload.get("named_room_count") or payload.get("named_count")
+            save_path = (
+                payload.get("saved_model_path")
+                or payload.get("save_as_path")
+                or payload.get("saved_path")
+            )
+            details = []
+            if room_count:
+                details.append(f"生成房间 {room_count} 个")
+            if named_count:
+                details.append(f"命名房间 {named_count} 个")
+            if save_path:
+                details.append(f"模型已另存为 `{save_path}`")
+            detail_str = f"（{'，'.join(details)}）" if details else ""
+            return f"Revit 建筑房间批量创建与命名已完成{detail_str}"
+
+        if normalized in {"revit_run_ifc_assignment", "revit_assign_ifc_identifiers", "revit_apply_assignment"}:
+            assigned_count = payload.get("assigned_count") or payload.get("total_assigned")
+            save_path = payload.get("saved_model_path") or payload.get("save_as_path")
+            details = []
+            if assigned_count:
+                details.append(f"已赋参构件 {assigned_count} 个")
+            if save_path:
+                details.append(f"模型已另存为 `{save_path}`")
+            detail_str = f"（{'，'.join(details)}）" if details else ""
+            return f"IFC 标识匹配与批量赋参已完成{detail_str}"
+
+        if normalized == "revit_export_ifc":
+            ifc_path = payload.get("ifc_path") or args.get("ifc_file_path")
+            xlsx_path = payload.get("xlsx_path")
+            if ifc_path:
+                xlsx_str = f"，配套清单：`{xlsx_path}`" if xlsx_path else ""
+                return f"IFC 交付文件已成功导出：`{ifc_path}`{xlsx_str}"
+            return "IFC 交付文件已成功导出"
+
+        if normalized in {"revit_set_base_point", "revit_set_project_base_point"}:
+            return "Revit 项目基准点设置已完成"
+
+        return None
 
     @staticmethod
     def _tool_observation_error(observation: str) -> str | None:
@@ -309,7 +382,11 @@ class RuntimeManus(Manus):
         if not isinstance(payload, dict):
             return None
         if payload.get("status") == "user_action_required":
-            return str(payload.get("message") or "需要你处理当前桌面应用后才能继续。")
+            message = str(payload.get("message") or "需要你处理当前桌面应用后才能继续。")
+            ifc_path = payload.get("ifc_path")
+            if ifc_path and str(ifc_path) not in message:
+                message = f"{message.rstrip('。')}：{ifc_path}"
+            return message
         if payload.get("status") != "selection_required":
             return None
         message = str(payload.get("message") or "找到多个应用，请选择要打开的版本。")
@@ -325,9 +402,13 @@ class RuntimeManus(Manus):
                 floor_candidates = candidate.get("floor_candidates")
                 floor_text = ""
                 if isinstance(floor_candidates, list) and floor_candidates:
-                    floor_text = "；候选楼层：" + ", ".join(
-                        str(value) for value in floor_candidates
-                    )
+                    has_complex = any(isinstance(v, dict) for v in floor_candidates)
+                    separator = "、" if has_complex else ", "
+                    formatted = [
+                        RuntimeManus._format_floor_candidate_item(v)
+                        for v in floor_candidates
+                    ]
+                    floor_text = "；候选楼层：" + separator.join(formatted)
                 lines.append(f"{index}. {dwg_path}{floor_text}")
                 continue
             name = candidate.get("display_name") or "未知应用"
@@ -342,6 +423,34 @@ class RuntimeManus(Manus):
             )
             lines.append(f"{index}. {name}（{version}） {detail}")
         return message + ("\n" + "\n".join(lines) if lines else "")
+
+    @staticmethod
+    def _format_floor_candidate_item(value: Any) -> str:
+        """Format a single floor candidate item into a user-friendly string."""
+        if isinstance(value, dict):
+            entries = value.get("floor_entries")
+            text = str(value.get("matched_text") or "").strip()
+            floors_desc = ""
+            if isinstance(entries, list) and entries:
+                if len(entries) == 1:
+                    floors_desc = f"{entries[0]}层"
+                elif len(entries) > 1 and all(
+                    isinstance(x, (int, float)) and float(x).is_integer() for x in entries
+                ):
+                    int_entries = [int(x) for x in entries]
+                    if int_entries == list(range(int_entries[0], int_entries[-1] + 1)):
+                        floors_desc = f"{int_entries[0]}~{int_entries[-1]}层"
+                    else:
+                        floors_desc = "/".join(f"{e}层" for e in int_entries)
+                else:
+                    floors_desc = "/".join(f"{e}层" for e in entries)
+            if floors_desc and text:
+                return f"{floors_desc}（依据图纸标注：“{text}”）"
+            if floors_desc:
+                return floors_desc
+            if text:
+                return f"标注：“{text}”"
+        return str(value)
 
     # Compatibility for callers/tests that used the former narrow helper.
     _selection_required = _input_required
@@ -419,7 +528,7 @@ class RuntimeManus(Manus):
             "revit_create_and_name_ar_rooms": (
                 "Revit 房间创建、命名和结果模型另存已完成。"
                 if completed
-                else "正在通过 AutoCAD 2020/天正读取 DWG，并创建和命名 Revit 房间。"
+                else "正在读取 DWG 图纸，并创建和命名 Revit 房间。"
             ),
             "revit_save_as": (
                 "模型已另存完成。"
@@ -481,6 +590,7 @@ class RuntimeManus(Manus):
         if self._cancelled():
             return "Error: Run cancelled before the next tool call"
         tool_name = command.function.name if command and command.function else "unknown"
+        tool_args = command.function.arguments if command and command.function else "{}"
         normalized_tool = tool_name.removeprefix("mcp_revit_local_").casefold()
         if self.revit_write_failure and normalized_tool in self._REVIT_WRITE_TOOLS:
             return "Error: 当前 Run 中已有 Revit 写操作失败或状态未知，已阻止后续 Revit 写操作。"
@@ -500,11 +610,16 @@ class RuntimeManus(Manus):
                 question = str(arguments.get("inquire") or "需要你补充信息后才能继续。")
             except (TypeError, ValueError, json.JSONDecodeError):
                 question = "需要你补充信息后才能继续。"
+            if self.completed_milestones:
+                milestones_block = "当前阶段已完成：\n" + "\n".join(f"- {m}" for m in self.completed_milestones)
+                full_content = f"{milestones_block}\n\n{question}"
+            else:
+                full_content = question
             await self._emit(
                 "assistant_message",
-                {"phase": "input_required", "content": question},
+                {"phase": "input_required", "content": full_content},
             )
-            self.memory.add_message(Message.assistant_message(question))
+            self.memory.add_message(Message.assistant_message(full_content))
             self.state = AgentState.FINISHED
             await self._emit(
                 "tool_completed",
@@ -594,6 +709,10 @@ class RuntimeManus(Manus):
             "user_action_required",
         }
         input_question = self._input_required(tool_name, observation)
+        if observation_succeeded:
+            milestone = self._format_completed_milestone(tool_name, tool_args, observation)
+            if milestone:
+                self.completed_milestones.append(milestone)
         if not observation_succeeded and normalized_tool in self._REVIT_WRITE_TOOLS:
             # A second mutation could clear or overwrite a result that is still
             # being committed by Revit.  Finish this Run and reject any sibling
@@ -606,13 +725,21 @@ class RuntimeManus(Manus):
                     f"Revit 操作 '{tool_name}' 执行未成功：{error_detail}。"
                     "已停止后续写操作以防止模型损坏。"
                 )
+                if self.completed_milestones:
+                    milestones_block = "当前阶段已完成：\n" + "\n".join(f"- {m}" for m in self.completed_milestones)
+                    error_message = f"{milestones_block}\n\n{error_message}"
                 self.memory.add_message(Message.assistant_message(error_message))
         if input_question:
+            if self.completed_milestones:
+                milestones_block = "当前阶段已完成：\n" + "\n".join(f"- {m}" for m in self.completed_milestones)
+                full_content = f"{milestones_block}\n\n{input_question}"
+            else:
+                full_content = input_question
             await self._emit(
                 "assistant_message",
-                {"phase": "input_required", "content": input_question},
+                {"phase": "input_required", "content": full_content},
             )
-            self.memory.add_message(Message.assistant_message(input_question))
+            self.memory.add_message(Message.assistant_message(full_content))
             self.state = AgentState.FINISHED
         await self._emit(
             "tool_completed",
@@ -644,242 +771,6 @@ class RuntimeManager:
         self._conversation_locks: dict[str, asyncio.Lock] = {}
         self._agent_factory = agent_factory or self._create_runtime_agent
         self._active_revit_mcp_runs = 0
-
-    _RVT_PATH_IN_TEXT = re.compile(
-        r"(?i)([A-Z]:\\[^\r\n<>|\"?*]+?\.rvt)(?=$|\s|[`*，。,；;）)\]\"'”’])"
-    )
-    _IFC_ASSIGNMENT_TERMS = (
-        "ifc标识",
-        "ifc identifier",
-        "ifc identifiers",
-        "赋ifc",
-        "ifc赋值",
-        "创建ifc",
-        "重建ifc",
-        "重新赋值ifc",
-        "重新赋参",
-        "ifc赋参",
-    )
-    _CHECKPOINT_SUCCESS_MARKERS = (
-        "已完成",
-        "完成",
-        "成功",
-        "已保存",
-        "已另存",
-        "另存至",
-        "保存位置",
-        "保存到",
-        "saved_model_path",
-        '"status": "completed"',
-        "'status': 'completed'",
-    )
-    _CHECKPOINT_FAILURE_MARKERS = (
-        "失败",
-        "无法",
-        "错误",
-        "超时",
-        "取消",
-        "未完成",
-        "unknown",
-        "timed_out",
-        "failed",
-        "unverified",
-        "不存在",
-        "请手动打开",
-    )
-    _LABELED_DISCIPLINE = re.compile(
-        r"(?i)(?:专业|discipline)\s*[：:]\s*"
-        r"(?:建筑|结构|通风空调|给排水|电气)?\s*[（(]?\s*"
-        r"(AR|ST|AC|PD|EL)\b"
-    )
-    _CHINESE_DISCIPLINE_CODE = re.compile(
-        r"(?i)(?:建筑|结构|通风空调|给排水|电气)\s*[（(]\s*"
-        r"(AR|ST|AC|PD|EL)\b"
-    )
-
-    @classmethod
-    def _explicit_discipline(cls, content: str) -> str | None:
-        """Return only a discipline that the user/assistant explicitly labels.
-
-        A code embedded in a filename (for example ``_AR.rvt``) is merely a
-        naming hint and must not silently become a business decision.
-        """
-        for pattern in (cls._LABELED_DISCIPLINE, cls._CHINESE_DISCIPLINE_CODE):
-            matches = pattern.findall(content)
-            if matches:
-                return matches[-1].upper()
-        return None
-
-    @classmethod
-    def _successful_checkpoint_path(cls, content: str) -> str | None:
-        """Extract only an RVT path that a previous assistant message confirmed."""
-        for line in reversed(content.splitlines()):
-            stripped = line.strip()
-            if any(term in stripped for term in cls._CHECKPOINT_FAILURE_MARKERS):
-                continue
-            if not any(term in stripped for term in cls._CHECKPOINT_SUCCESS_MARKERS):
-                continue
-            paths = cls._RVT_PATH_IN_TEXT.findall(stripped)
-            if paths:
-                return paths[-1].strip().rstrip("，。；;）)")
-        return None
-
-    @classmethod
-    def _ifc_assignment_continuation_hint(
-        cls, history: list[HistoryMessage], user_message: str
-    ) -> str | None:
-        """Provide a continuation hint when the current request requires IFC assignment.
-
-        This hint is an in-memory execution guard reconstructed from the
-        supplied chat history and is not stored.  It prevents an active-model
-        operation from wasting a Run on filesystem exploration when a previous
-        assistant reply already identifies the model checkpoint.
-        """
-        normalized_request = re.sub(r"\s+", "", user_message).casefold()
-        if not any(term in normalized_request for term in cls._IFC_ASSIGNMENT_TERMS):
-            return None
-
-        # The current request always wins over older chat history.  A
-        # continuation hint must never redirect an explicitly selected model
-        # back to an earlier project checkpoint.
-        requested_models = [
-            path.strip().rstrip("，。；;）)")
-            for path in cls._RVT_PATH_IN_TEXT.findall(user_message)
-        ]
-        unique_requested_models = list(dict.fromkeys(requested_models))
-        if len(unique_requested_models) > 1:
-            return (
-                "当前请求列出了多个 RVT 模型。不要扫描项目文件夹或从历史中替换用户选择；"
-                "请只询问用户要对哪一个当前 Revit 模型执行 IFC 标识赋值。"
-            )
-        if len(unique_requested_models) == 1:
-            model_path = unique_requested_models[0]
-            discipline = cls._explicit_discipline(user_message)
-            if discipline:
-                return (
-                    "当前用户明确指定的模型优先于任何历史检查点："
-                    f"`{model_path}`，专业为 `{discipline}`。直接调用 "
-                    "`revit_run_ifc_assignment`；赋值实际作用于当前 Revit 活动模型。"
-                    "不要使用通用文件工具扫描、读取或列举项目文件夹。"
-                )
-            return (
-                "当前用户明确指定的模型优先于任何历史检查点："
-                f"`{model_path}`。不要扫描、读取或列举项目文件夹来重新选择模型；"
-                "请只询问一次该当前 Revit 模型的专业，然后调用 IFC 标识赋值工具。"
-            )
-
-        for message in reversed(history):
-            if message.role != "assistant":
-                continue
-            model_path = cls._successful_checkpoint_path(message.content)
-            if not model_path:
-                continue
-            discipline = cls._explicit_discipline(message.content)
-            if discipline:
-                return (
-                    "续办提示（由上一条成功助手回复提取）：最近确认的模型检查点为 "
-                    f"`{model_path}`，专业为 `{discipline}`。当前请求明确要求 IFC 标识时，"
-                    "直接调用 `revit_run_ifc_assignment` 并使用这两个值；赋值实际作用于当前 "
-                    "Revit 活动模型。不要为了验证或重新选择该模型而使用通用文件工具扫描、"
-                    "读取或列举项目文件夹。旧插件可能把另存结果写成无后缀文件；该检查点仍是 "
-                    "SaveAs 位置线索。只有用户明确指定另一模型或专业冲突时才询问。"
-                )
-            return (
-                "续办提示（由上一条成功助手回复提取）：最近确认的模型检查点为 "
-                f"`{model_path}`。当前请求明确要求 IFC 标识时，不要扫描项目文件夹；"
-                "请只询问一次该当前 Revit 模型的专业，然后调用赋值工具。"
-            )
-
-        return (
-            "当前请求涉及 IFC 标识，但历史没有唯一的已确认模型检查点。不要浏览、读取或 "
-            "列举项目文件夹来猜模型；请只询问一次是否对当前 Revit 打开的模型赋值，并确认专业。"
-        )
-
-    _IFC_PATH_IN_TEXT = re.compile(
-        r"(?i)([A-Z]:\\[^\r\n<>|\"?*]+?\.ifc)(?=$|\s|[`*，。,；;）)\]\"'”’])"
-    )
-    _INSPECTION_CONFIRM_TERMS = (
-        "已加载",
-        "已经加载",
-        "加载了",
-        "加载完成",
-        "已加载好",
-        "加载好",
-        "已打开",
-        "已经打开",
-        "打开了",
-        "已准备好",
-        "已经准备好",
-        "准备好",
-        "准备完毕",
-        "已导入",
-        "已经导入",
-        "导入了",
-        "可以继续",
-        "继续",
-        "继续吧",
-        "继续执行",
-        "继续下一步",
-        "继续质检",
-        "继续自检",
-        "进行质检",
-        "进行自检",
-        "开始自检",
-        "开始质检",
-        "自检",
-        "质检",
-        "好了",
-        "已经好了",
-        "搞定",
-        "搞定了",
-        "可以了",
-        "行了",
-        "ok",
-        "好的",
-        "已完成",
-        "已经完成",
-        "完成",
-        "确认",
-        "是的",
-        "对",
-        "对的",
-    )
-
-    @classmethod
-    def _inspection_continuation_hint(
-        cls, history: list[HistoryMessage], user_message: str
-    ) -> str | None:
-        """Provide a continuation hint when user confirms IFC loading or requests inspection."""
-        # If user explicitly specifies a new RVT path, do not inject older continuation hint
-        if cls._RVT_PATH_IN_TEXT.findall(user_message):
-            return None
-
-        normalized_request = re.sub(r"\s+", "", user_message).casefold()
-        term_matched = any(term in normalized_request for term in cls._INSPECTION_CONFIRM_TERMS)
-
-        # Check if the latest assistant message was waiting for user to load/open IFC in SZ-IFC
-        last_assistant_msg = next((m.content for m in reversed(history) if m.role == "assistant"), "")
-        is_waiting_for_sz_ifc = (
-            any(marker in last_assistant_msg for marker in ("SZ-IFC", "sz-ifc", "自检", "质检", "手动打开", "手动加载"))
-            and bool(cls._IFC_PATH_IN_TEXT.findall(last_assistant_msg))
-        )
-
-        if not term_matched and not is_waiting_for_sz_ifc:
-            return None
-
-        for message in reversed(history):
-            if message.role != "assistant":
-                continue
-            paths = cls._IFC_PATH_IN_TEXT.findall(message.content)
-            if paths:
-                ifc_path = paths[-1].strip().rstrip("，。；;）)")
-                return (
-                    "续办提示（由历史记录提取）：目标 IFC 模型已导出为 "
-                    f"`{ifc_path}`，且当前用户已确认在 SZ-IFC 中加载该文件。"
-                    "严禁重新打开 Revit 模型、严禁重新执行 IFC 标识赋值、严禁重新导出 IFC！"
-                    "请直接激活 `revit-project-delivery` 并调用 `revit_inspect_ifc` 进行 SZ-IFC 报建自检。"
-                )
-        return None
 
     @staticmethod
     def _internal_mcp_command() -> tuple[str, list[str]]:
@@ -1036,16 +927,6 @@ class RuntimeManager:
                 agent = await self._agent_factory(event_sink, lambda: run.cancel_requested)
                 for message in run.request.history:
                     agent.update_memory(message.role, message.content)
-                continuation_hint = (
-                    self._ifc_assignment_continuation_hint(
-                        run.request.history, run.request.user_message
-                    )
-                    or self._inspection_continuation_hint(
-                        run.request.history, run.request.user_message
-                    )
-                )
-                if continuation_hint:
-                    agent.update_memory("system", continuation_hint)
                 attachment_text = "\n".join(
                     f"Attachment ({item.type}): {item.path}"
                     for item in run.request.attachments

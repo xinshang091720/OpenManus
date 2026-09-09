@@ -17,6 +17,7 @@ from app.tool.deactivate_skill import DeactivateSkill
 from app.tool.ask_human import AskHuman
 from app.tool.mcp import MCPClients, MCPClientTool
 from app.tool.python_execute import PythonExecute
+from app.tool.cad_execute import CadRunCode
 from app.tool.skill_script import SkillScriptTool
 from app.tool.str_replace_editor import StrReplaceEditor
 from app.tool.terminate import Terminate
@@ -29,6 +30,7 @@ def _default_tools() -> ToolCollection:
     """Create the standard tools without forcing browser native libraries at boot."""
     tools = [
         PythonExecute(),
+        CadRunCode(),
         StrReplaceEditor(),
         WindowsOpenApplication(),
         AskHuman(),

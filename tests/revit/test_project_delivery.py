@@ -710,6 +710,26 @@ def test_export_ifc_detects_files_in_project_root_when_target_in_result_ifc_assi
     assert result["xlsx_path"] == f"{root_file}.xlsx"
 
 
+def test_export_ifc_detects_files_in_nested_subfolder_when_target_in_project_root(
+    tmp_path, monkeypatch
+):
+    """Detect .ifc/.xlsx in model subfolder rvt/ifc-assigned/result when target is in root."""
+    target = tmp_path / "B2.ifc"
+    subfolder_file = tmp_path / "rvt" / "ifc-assigned" / "result" / "B2.ifc"
+    client = DeliveryClient(subfolder_file)
+    workflow = RevitProjectDelivery(client)
+    workflow.lock = NoopRevitLock()
+    monkeypatch.setattr("app.revit.project_delivery._close_export_dialog", lambda: True)
+    try:
+        result = asyncio.run(workflow.export_ifc(str(target), timeout_seconds=1))
+    finally:
+        workflow.close()
+
+    assert client.export_paths == [str(target)]
+    assert result["ifc_path"] == str(subfolder_file)
+    assert result["xlsx_path"] == f"{subfolder_file}.xlsx"
+
+
 def test_fresh_ifc_pair_rejects_unchanged_sibling_delivery(tmp_path):
     target = tmp_path / "result" / "ifc" / "B2.ifc"
     sibling_file = tmp_path / "result" / "ifc-assigned" / "B2.ifc"

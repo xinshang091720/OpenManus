@@ -1,4 +1,5 @@
 import asyncio
+import json
 
 from fastapi.testclient import TestClient
 import pytest
@@ -55,171 +56,37 @@ def test_request_id_is_optional_and_does_not_define_context():
     assert request.history[0].role == "assistant"
 
 
-def test_ifc_assignment_hint_reuses_recent_model_checkpoint_without_scanning():
-    hint = RuntimeManager._ifc_assignment_continuation_hint(
-        [
-            HistoryMessage(
-                role="assistant",
-                content=(
-                    "模型已另存至："
-                    "C:\\Models\\result\\project_AR.rvt\n"
-                    "专业：建筑（AR）"
-                ),
-            )
-        ],
-        "帮我创建 IFC 标识",
-    )
+def test_runtime_manager_faithfully_loads_history_into_agent_memory():
+    recorded_agent = None
 
-    assert hint is not None
-    assert "C:\\Models\\result\\project_AR.rvt" in hint
-    assert "`AR`" in hint
-    assert "不要为了验证或重新选择该模型" in hint
+    async def scenario():
+        nonlocal recorded_agent
 
+        async def factory(sink, cancel_checker):
+            nonlocal recorded_agent
+            recorded_agent = FakeAgent(sink)
+            return recorded_agent
 
-def test_ifc_assignment_hint_prefers_explicit_current_model_over_history():
-    hint = RuntimeManager._ifc_assignment_continuation_hint(
-        [
-            HistoryMessage(
-                role="assistant",
-                content="模型已另存至：C:\\Models\\old\\project_AR.rvt\n专业：建筑（AR）",
-            )
-        ],
-        "请为 \"C:\\Models\\new\\project_ST.rvt\" 创建 IFC 标识，专业：结构（ST）",
-    )
+        manager = RuntimeManager(agent_factory=factory)
+        request = CreateRunRequest(
+            conversation_id="conv-history-1",
+            user_message="继续",
+            history=[
+                {"role": "user", "content": "请打开建筑模型并自检"},
+                {"role": "assistant", "content": "IFC 已导出至 C:\\result.ifc，请确认加载。"},
+            ],
+        )
+        run = await manager.create_run(request)
+        await run.task
 
-    assert hint is not None
-    assert "C:\\Models\\new\\project_ST.rvt" in hint
-    assert "C:\\Models\\old\\project_AR.rvt" not in hint
-    assert "`ST`" in hint
-
-
-def test_ifc_assignment_hint_uses_last_path_in_successful_checkpoint_reply():
-    hint = RuntimeManager._ifc_assignment_continuation_hint(
-        [
-            HistoryMessage(
-                role="assistant",
-                content=(
-                    "模型处理已完成。原模型：C:\\Models\\source.rvt；"
-                    "模型已另存至：C:\\Models\\result\\assigned.rvt。专业：建筑（AR）"
-                ),
-            )
-        ],
-        "帮我创建 IFC 标识",
-    )
-
-    assert hint is not None
-    assert "C:\\Models\\result\\assigned.rvt" in hint
-    assert "C:\\Models\\source.rvt" not in hint
-
-
-def test_ifc_assignment_hint_does_not_reuse_failed_model_path():
-    hint = RuntimeManager._ifc_assignment_continuation_hint(
-        [
-            HistoryMessage(
-                role="assistant",
-                content="无法打开 C:\\Models\\missing.rvt，请手动打开目标模型。",
-            )
-        ],
-        "帮我创建 IFC 标识",
-    )
-
-    assert hint is not None
-    assert "C:\\Models\\missing.rvt" not in hint
-    assert "只询问一次" in hint
-
-
-def test_ifc_assignment_hint_requests_one_confirmation_when_history_has_no_checkpoint():
-    hint = RuntimeManager._ifc_assignment_continuation_hint(
-        [HistoryMessage(role="assistant", content="房间创建完成。")],
-        "重新赋值 IFC 标识",
-    )
-
-    assert hint is not None
-    assert "只询问一次" in hint
-    assert "项目文件夹" in hint
-
-
-def test_non_assignment_request_does_not_receive_ifc_assignment_hint():
-    assert RuntimeManager._ifc_assignment_continuation_hint([], "帮我导出 IFC") is None
-
-
-@pytest.mark.parametrize(
-    "query",
-    [
-        "已加载，可以继续",
-        "已经打开 继续",
-        "已经打开",
-        "已打开",
-        "继续",
-        "好了 继续",
-        "ok",
-        "已经加载了",
-        "打开了",
-    ],
-)
-def test_inspection_hint_when_user_confirms_loaded(query):
-    hint = RuntimeManager._inspection_continuation_hint(
-        [
-            HistoryMessage(
-                role="assistant",
-                content=(
-                    "IFC 导出成功！文件路径：C:\\Models\\project_AR.ifc\n"
-                    "请在 SZ-IFC 中手动打开该文件后回复“已加载，可以继续”。"
-                ),
-            )
-        ],
-        query,
-    )
-    assert hint is not None
-    assert "C:\\Models\\project_AR.ifc" in hint
-    assert "严禁重新执行 IFC 标识赋值" in hint
-    assert "revit_inspect_ifc" in hint
-
-
-def test_inspection_hint_ignored_when_no_confirmation():
-    hint = RuntimeManager._inspection_continuation_hint(
-        [
-            HistoryMessage(
-                role="assistant",
-                content="IFC 导出成功！文件路径：C:\\Models\\project_AR.ifc",
-            )
-        ],
-        "帮我看看这个模型",
-    )
-    assert hint is None
-
-
-def test_inspection_hint_overridden_when_user_requests_new_rvt_model():
-    hint = RuntimeManager._inspection_continuation_hint(
-        [
-            HistoryMessage(
-                role="assistant",
-                content=(
-                    "IFC 导出成功！文件路径：C:\\Models\\project_AR.ifc\n"
-                    "请在 SZ-IFC 中手动打开该文件后回复“已加载，可以继续”。"
-                ),
-            )
-        ],
-        "帮我打开新模型 D:\\NewProject\\building_AR.rvt 并创建房间",
-    )
-    assert hint is None
-
-
-def test_inspection_hint_phase_continuation_for_arbitrary_reply():
-    hint = RuntimeManager._inspection_continuation_hint(
-        [
-            HistoryMessage(
-                role="assistant",
-                content=(
-                    "IFC 导出成功！文件路径：C:\\Models\\project_AR.ifc\n"
-                    "请在 SZ-IFC 中手动打开该文件后回复“已加载，可以继续”。"
-                ),
-            )
-        ],
-        "弄好了，开始吧",
-    )
-    assert hint is not None
-    assert "C:\\Models\\project_AR.ifc" in hint
+    asyncio.run(scenario())
+    assert recorded_agent is not None
+    # Verify that the history messages were faithfully recorded into agent memory
+    assert len(recorded_agent.memory.messages) >= 2
+    assert recorded_agent.memory.messages[0].role == "user"
+    assert recorded_agent.memory.messages[0].content == "请打开建筑模型并自检"
+    assert recorded_agent.memory.messages[1].role == "assistant"
+    assert "C:\\result.ifc" in recorded_agent.memory.messages[1].content
 
 
 def test_runtime_health_requires_bearer_token():
@@ -386,6 +253,10 @@ def test_runtime_revit_progress_uses_user_facing_business_summaries():
         "mcp_revit_local_revit_assign_ifc_identifiers"
     )
     assert RuntimeManus._tool_summary("revit_open_file", completed=True).startswith("已完成")
+    room_summary = RuntimeManus._tool_summary("revit_create_and_name_ar_rooms")
+    assert "DWG" in room_summary
+    assert "AutoCAD" not in room_summary
+    assert "天正" not in room_summary
 
 
 def test_runtime_emits_periodic_revit_progress_without_assistant_message(monkeypatch):
@@ -652,6 +523,31 @@ def test_runtime_turns_room_floor_selection_into_input_request():
     assert "6, 30" in question
 
 
+def test_runtime_formats_complex_floor_candidates_friendly():
+    observation = (
+        'Observed output of cmd `mcp_revit_local_revit_create_and_name_ar_rooms` executed:\n'
+        '{"status":"selection_required","message":"请确认 DWG 对应楼层",'
+        '"candidates":[{"dwg_path":"D:\\\\教育基地\\\\图纸\\\\综合楼 五层平面图.dwg",'
+        '"floor_candidates":['
+        '{"matched_text":"三层工坊分体空调室外机","floor_entries":[3]},'
+        '{"matched_text":"四层小展厅分体空调室外机","floor_entries":[4]},'
+        '{"matched_text":"五层防火分区示意图","floor_entries":[5]}'
+        ']}]}'
+    )
+
+    question = RuntimeManus._input_required(
+        "mcp_revit_local_revit_create_and_name_ar_rooms", observation
+    )
+
+    assert "请确认 DWG 对应楼层" in question
+    assert "综合楼 五层平面图.dwg" in question
+    assert "3层（依据图纸标注：“三层工坊分体空调室外机”）" in question
+    assert "4层（依据图纸标注：“四层小展厅分体空调室外机”）" in question
+    assert "5层（依据图纸标注：“五层防火分区示意图”）" in question
+    assert "matched_text" not in question
+    assert "floor_entries" not in question
+
+
 def test_runtime_manager_formats_rate_limit_and_budget_error_friendly():
     class FailingAgent:
         def __init__(self, sink, **_):
@@ -679,4 +575,85 @@ def test_runtime_manager_formats_rate_limit_and_budget_error_friendly():
     events = asyncio.run(get_events())
     failed_event = next(e for e in events if e.event == "run_failed")
     assert failed_event.data["error"] == "模型执行失败，请检查余额是否充足，如果不是请联系客服"
+
+
+def test_format_completed_milestone_extracts_actual_model_path_from_payload():
+    obs = json.dumps({
+        "status": "ready",
+        "model_path": r"C:\Folder\rvt\0513_js瑞府_地下室_AR-B3.rvt",
+        "model_version": 2018,
+    })
+    milestone = RuntimeManus._format_completed_milestone(
+        "revit_open_project_model",
+        {"path": r"C:\Folder"},
+        obs,
+    )
+    assert milestone is not None
+    assert "0513_js瑞府_地下室_AR-B3.rvt" in milestone
+    assert "2018" in milestone
+
+
+def test_format_completed_milestone_extracts_room_and_export_details():
+    room_obs = json.dumps({
+        "status": "success",
+        "room_count": 48,
+        "named_room_count": 48,
+        "saved_model_path": r"C:\result\model_rooms.rvt",
+    })
+    room_milestone = RuntimeManus._format_completed_milestone(
+        "revit_create_and_name_ar_rooms",
+        {},
+        room_obs,
+    )
+    assert "48 个" in room_milestone
+    assert "model_rooms.rvt" in room_milestone
+
+    export_obs = json.dumps({
+        "status": "success",
+        "ifc_path": r"C:\result\model.ifc",
+        "xlsx_path": r"C:\result\model.xlsx",
+    })
+    export_milestone = RuntimeManus._format_completed_milestone(
+        "revit_export_ifc",
+        {},
+        export_obs,
+    )
+    assert "model.ifc" in export_milestone
+    assert "model.xlsx" in export_milestone
+
+
+def test_runtime_prepends_completed_milestones_to_user_action_required(monkeypatch):
+    events = []
+
+    async def sink(event, data):
+        events.append((event, data))
+
+    agent = RuntimeManus(event_sink=sink)
+    agent.completed_milestones.append("Revit 建筑模型已成功打开：test.rvt")
+    agent.completed_milestones.append("Revit 建筑房间批量创建与命名已完成（生成房间 10 个）")
+
+    observation = json.dumps({
+        "status": "user_action_required",
+        "message": "请在 SZ-IFC 中手动加载目标模型",
+        "ifc_path": r"C:\test.ifc",
+    })
+
+    async def fake_tool(self, command):
+        return observation
+
+    monkeypatch.setattr("app.api.runtime.Manus.execute_tool", fake_tool)
+
+    cmd = ToolCall(
+        id="sz-1",
+        function={"name": "mcp_revit_local_revit_inspect_ifc", "arguments": "{}"},
+    )
+    asyncio.run(agent.execute_tool(cmd))
+
+    input_req = next(data for ev, data in events if ev == "assistant_message")
+    content = input_req["content"]
+    assert "当前阶段已完成：" in content
+    assert "test.rvt" in content
+    assert "生成房间 10 个" in content
+    assert "请在 SZ-IFC 中手动加载目标模型：C:\\test.ifc" in content
+
 

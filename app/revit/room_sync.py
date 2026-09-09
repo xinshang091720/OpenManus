@@ -357,6 +357,7 @@ def _resolve_floor_from_local_texts(
     raw_texts: list[str],
     *,
     filename_hint: int | float | None,
+    filename_floors: list[int | float] | None = None,
 ) -> dict[str, Any] | None:
     """Use explicit DWG title text before consulting any filename hint."""
     candidates: list[tuple[int, str, list[int | float]]] = []
@@ -385,6 +386,22 @@ def _resolve_floor_from_local_texts(
             filename_hint=filename_hint,
             matched_text=texts[0],
         )
+
+    # ponytail: When drawing text only has weak/incidental annotations (< 100)
+    # that conflict (e.g. equipment annotations like '三层工坊室外机'), but the
+    # DWG filename is unambiguous (e.g. '综合楼 五层平面图.dwg'), the normalized
+    # filename takes precedence over weak drawing noise without hardcoding keywords.
+    if highest_score < 100 and filename_floors:
+        matching_cand = next((c for c in strongest if c[2] == filename_floors), None)
+        matched_text = matching_cand[1] if matching_cand else ""
+        return _resolved_floor_detection(
+            source="filename",
+            confidence="high" if matched_text else "medium",
+            floor_entries=filename_floors,
+            filename_hint=filename_hint,
+            matched_text=matched_text,
+        )
+
     return _selection_required_floor_detection(
         filename_hint=filename_hint,
         source="drawing_text",
@@ -430,12 +447,28 @@ def _extract_rooms_and_floor_from_texts(
     extracted = process_room_extraction_from_texts(text_items)
     raw_texts = [str(item.get("Text") or "") for item in text_items if item.get("Text")]
 
+    filename_floors: list[int | float] = []
+    if dwg_filename:
+        filename_floors = _floor_entries_from_title_text(Path(dwg_filename).stem)
+    if not filename_floors and fallback_floor is not None:
+        filename_floors = [_normalise_floor_number(fallback_floor)]
+
     local_detection = _resolve_floor_from_local_texts(
         raw_texts,
         filename_hint=fallback_floor,
+        filename_floors=filename_floors,
     )
     if local_detection is not None:
         return extracted, local_detection["floor_entries"], local_detection
+
+    if filename_floors:
+        detection = _resolved_floor_detection(
+            source="filename",
+            confidence="medium",
+            floor_entries=filename_floors,
+            filename_hint=fallback_floor,
+        )
+        return extracted, filename_floors, detection
 
     floor_res = judge_floor_from_texts(raw_texts, dwg_filename)
     if isinstance(floor_res, dict):
@@ -453,6 +486,15 @@ def _extract_rooms_and_floor_from_texts(
                     matched_text=matched_text,
                 )
                 return extracted, entries, detection
+
+    if filename_floors:
+        detection = _resolved_floor_detection(
+            source="filename",
+            confidence="medium",
+            floor_entries=filename_floors,
+            filename_hint=fallback_floor,
+        )
+        return extracted, filename_floors, detection
 
     if fallback_floor is not None:
         entries = [_normalise_floor_number(fallback_floor)]

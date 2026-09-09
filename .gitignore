@@ -218,3 +218,6 @@ node_modules
 Installer/
 *.cache
 *.vsidx
+
+# Local private notes
+历来检查*.md

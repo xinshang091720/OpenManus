@@ -95,13 +95,14 @@ def _model_ready(window, ifc_filename, full_scan=False):
 
 
 def _find_prepared_sz_ifc_main_window(
-    ifc_filename=None, process_id=None, *, full_scan=True
+    ifc_filename=None, process_id=None, *, full_scan=True, target_path=None
 ):
     """Return the unique prepared main window, preferring the requested model."""
+    display_target = target_path or ifc_filename or ""
     all_cbims = _cbims_windows(process_id)
     if not all_cbims:
         raise SzIfcUserActionRequired(
-            f"未检测到已运行的 SZ-IFC 应用程序。请先启动 SZ-IFC，并在软件中手动加载目标 IFC 模型：{ifc_filename or ''}".strip()
+            f"未检测到已运行的 SZ-IFC 应用程序。请先启动 SZ-IFC，并在软件中手动加载目标 IFC 模型：{display_target}".strip()
         )
 
     main_windows = [
@@ -172,11 +173,24 @@ def _activate_window(handle, window=None):
             pass
 
 
-def _click_once(element, window=None, handle=None):
+def _click_once(element, window=None, handle=None, *, expect_modal=False):
     if not element.is_enabled():
         raise RuntimeError(f"控件尚未启用：{element.window_text()}")
     if handle:
         _activate_window(handle, window)
+    if expect_modal:
+        # Modal dialog triggers (such as "导出报告" opening Windows SaveFileDialog)
+        # must not block the calling automation thread on InvokePattern.Invoke().
+        # Prefer click_input; fall back to a daemon thread invoke.
+        try:
+            element.click_input()
+            return
+        except Exception as e:
+            logger.warning(f"click_input 触发模态对话框失败，改用后台线程异步 invoke: {e}")
+            import threading
+            threading.Thread(target=lambda: element.invoke(), daemon=True).start()
+            return
+
     try:
         element.invoke()
         return
@@ -470,6 +484,7 @@ def _legacy_save_report_dialog(main_window_handle, report_path, deadline, cancel
     Keep that behaviour for report export while the caller still validates the
     resulting DOCX before declaring success.
     """
+    logger.info("旧版兼容：正在定位保存/另存为对话框...")
     app = Application(backend="uia").connect(handle=main_window_handle, timeout=5)
     save_dialog = None
     for _ in range(15):
@@ -521,37 +536,53 @@ def _legacy_save_report_dialog(main_window_handle, report_path, deadline, cancel
         send_keys("{ENTER}")
     logger.info("旧版兼容：已提交报告保存操作")
 
-    for _ in range(15):
-        _raise_if_cancelled(cancel_event)
+    # If an overwrite confirmation dialog appears, accept it
+    for _ in range(3):
         try:
-            top_window = app.top_window()
-            texts = [top_window.window_text()]
-            texts.extend(element.window_text() for element in top_window.descendants())
-            if any(
-                marker in text
-                for marker in ("导出成功", "导出已完成", "完成")
-                for text in texts
-            ):
-                for label in ("确定", "确认", "OK"):
-                    try:
-                        button = top_window.child_window(
-                            title=label, control_type="Button", found_index=0
-                        )
-                        if button.exists(timeout=0.1):
-                            button.click_input()
-                            logger.info(f"旧版兼容：已点击报告完成窗口“{label}”")
-                            return
-                    except Exception:
-                        continue
-                send_keys("{ENTER}")
-                logger.info("旧版兼容：已确认报告完成窗口")
-                return
+            confirm_btn = save_dialog.child_window(
+                title_re=r"是.*|确定.*|Yes", control_type="Button", found_index=0
+            )
+            if confirm_btn.exists(timeout=0.2):
+                confirm_btn.click_input()
+                logger.info("旧版兼容：已确认覆盖保存")
+                break
         except Exception:
             pass
-        time.sleep(min(0.5, max(0, deadline - time.monotonic())))
+        time.sleep(0.2)
 
-    # This is intentionally retained from the earlier Runtime: after the
-    # report save submission, acknowledge the active completion dialog once.
+    for _ in range(10):
+        _raise_if_cancelled(cancel_event)
+        try:
+            # If the report file has already started writing or exists with non-zero size, return immediately
+            if Path(report_path).exists() and Path(report_path).stat().st_size > 0:
+                logger.info("旧版兼容：报告文件已落盘，直接进入写入校验")
+                return
+
+            top_window = app.top_window()
+            # If top window is the SZ-IFC main window itself, no secondary completion dialog is active
+            if getattr(top_window, "handle", None) == main_window_handle:
+                time.sleep(0.5)
+                continue
+
+            # A secondary dialog is active (e.g. "导出成功" or message box)
+            for label in ("确定", "确认", "OK", "关闭"):
+                try:
+                    button = top_window.child_window(
+                        title=label, control_type="Button", found_index=0
+                    )
+                    if button.exists(timeout=0.1):
+                        button.click_input()
+                        logger.info(f"旧版兼容：已点击报告完成窗口“{label}”")
+                        return
+                except Exception:
+                    continue
+            send_keys("{ENTER}")
+            logger.info("旧版兼容：已发送回车确认次级弹窗")
+            return
+        except Exception:
+            pass
+        time.sleep(0.5)
+
     send_keys("{ENTER}")
 
 
@@ -587,7 +618,7 @@ def run_sz_ifc_full_inspection(
         if full_scan:
             scan_state["next_full"] = now + 5
         return _find_prepared_sz_ifc_main_window(
-            ifc_path.name, full_scan=full_scan
+            ifc_path.name, full_scan=full_scan, target_path=str(ifc_path)
         )
 
     try:
@@ -659,7 +690,7 @@ def run_sz_ifc_full_inspection(
     logger.info("[6/7] 导出并保存检查报告...")
     set_tool_progress("revit_inspect_ifc", "正在导出并保存 DOCX 质检报告")
     _raise_if_cancelled(cancel_event)
-    _click_once(export_button, main_window, handle)
+    _click_once(export_button, main_window, handle, expect_modal=True)
     _legacy_save_report_dialog(handle, report_path, deadline, cancel_event)
     logger.info("[7/7] 等待 DOCX 稳定写入...")
     set_tool_progress("revit_inspect_ifc", "正在等待 DOCX 质检报告文件写入")

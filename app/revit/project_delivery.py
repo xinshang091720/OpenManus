@@ -6,6 +6,7 @@ import asyncio
 import importlib.util
 import json
 import logging
+import os
 import re
 import threading
 import time
@@ -18,6 +19,7 @@ from app.revit.client import RevitApiClient
 from app.revit.operations import RevitOperationUnknown, call_revit_operation
 from app.revit.save_result import saved_model_name_collision
 from app.tool.windows_app import running_revit_processes
+from app.tool_progress import set_tool_progress
 
 
 logger = logging.getLogger(__name__)
@@ -296,6 +298,7 @@ class RevitProjectDelivery:
         path = Path(rvt_file_path)
         if path.suffix.lower() != ".rvt" or not path.is_file():
             raise ValueError("rvt_file_path 必须是存在的 .rvt 文件")
+        set_tool_progress("revit_open_project_model", f"正在打开 Revit 模型：{path.name}")
         async with self.lock.hold():
             await call_revit_operation(
                 self.client, "OpenRevitFile", self.client.open_revit_file, str(path)
@@ -345,6 +348,7 @@ class RevitProjectDelivery:
             is_base_point_complete,
         )
 
+        set_tool_progress("revit_set_project_base_point", "正在校验 Revit 模型基准点状态")
         async with self.lock.hold():
             # 步骤 1: 验证模型原始基点
             check_res = await call_revit_operation(
@@ -423,6 +427,7 @@ class RevitProjectDelivery:
                 payload = build_base_point_payload(step1_data=step1_data, step2_data=None)
 
             # 步骤 3: 调用 BasePointSetting
+            set_tool_progress("revit_set_project_base_point", "正在向 Revit 写入新的项目基准点与测量点坐标")
             response = await call_revit_operation(
                 self.client,
                 "BasePointSetting",
@@ -533,6 +538,7 @@ class RevitProjectDelivery:
                 )
                 await asyncio.sleep(0)
                 try:
+                    set_tool_progress("revit_export_ifc", f"正在调用 Revit 提交 IFC 导出任务：{path.name}")
                     response = await call_revit_operation(
                         self.client,
                         "ExportIFC",
@@ -549,6 +555,10 @@ class RevitProjectDelivery:
                     dialog_task=save_dialog_task,
                     operation_started_at=operation_started_at,
                     timeout_seconds=timeout_seconds,
+                    path=path,
+                    requested_ifc_path=requested_path,
+                    rvt_file_path=rvt_file_path,
+                    recovery_model_path=recovery_model_path,
                 )
         finally:
             save_dialog_stop.set()
@@ -632,6 +642,10 @@ class RevitProjectDelivery:
         dialog_task: asyncio.Task[Any],
         operation_started_at: float,
         timeout_seconds: int,
+        path: Path | None = None,
+        requested_ifc_path: Path | None = None,
+        rvt_file_path: str | None = None,
+        recovery_model_path: str | None = None,
     ) -> tuple[Path, Path] | None:
         """Wait for final Revit UI completion, then verify the file pair.
 
@@ -648,6 +662,7 @@ class RevitProjectDelivery:
         stable_polls = 0
         next_file_check = 0.0
         waiting_for_final_confirmation_logged = False
+        set_tool_progress("revit_export_ifc", "正在等待 IFC 与 Excel 交付物落盘并校验完整性")
         while True:
             if dialog_task.done():
                 try:
@@ -663,6 +678,23 @@ class RevitProjectDelivery:
 
             if now >= next_file_check:
                 pair = self._fresh_ifc_pair(candidates, before)
+                if not pair and path is not None:
+                    # Dynamically discover any candidate locations created during export
+                    current_candidates = self._ifc_candidates(
+                        path,
+                        recovery_model_path=recovery_model_path,
+                        requested_ifc_path=requested_ifc_path,
+                        rvt_file_path=rvt_file_path,
+                    )
+                    for cand in current_candidates:
+                        if cand not in candidates:
+                            candidates.append(cand)
+                            if cand not in before:
+                                before[cand] = None
+                            sidecar = Path(f"{cand}.xlsx")
+                            if sidecar not in before:
+                                before[sidecar] = None
+                    pair = self._fresh_ifc_pair(candidates, before)
                 if pair:
                     fingerprint = (
                         self._file_fingerprint(pair[0]),
@@ -740,7 +772,66 @@ class RevitProjectDelivery:
         for model_path in (rvt_file_path, recovery_model_path):
             if model_path:
                 rvt_dir = Path(model_path).parent
-                candidate_dirs.extend([rvt_dir, rvt_dir / "ifc-assigned"])
+                for extra in (
+                    rvt_dir,
+                    rvt_dir / "ifc-assigned",
+                    rvt_dir / "result",
+                    rvt_dir / "ifc-assigned" / "result",
+                    rvt_dir / "result" / "ifc-assigned",
+                ):
+                    if extra not in candidate_dirs:
+                        candidate_dirs.append(extra)
+        # 当目标路径是项目根目录，但 Revit 中当前打开的模型位于中间子目录（如 rvt、result、ifc-assigned 等）时，
+        # 插件会将交付物保存在模型所在目录或其 result 子目录。将这些常见的交付物和模型子目录也加入候选监听。
+        sub_folders = (
+            "rvt",
+            "result",
+            "ifc",
+            "ifc-assigned",
+            "rvt/result",
+            "rvt/ifc-assigned",
+            "rvt/ifc-assigned/result",
+            "rvt/result/ifc-assigned",
+            "result/ifc-assigned",
+            "result/ifc",
+            "ifc-assigned/result",
+        )
+        for base in list(candidate_dirs):
+            if not base.is_dir():
+                continue
+            for rel in sub_folders:
+                sub = base / Path(rel)
+                if sub.is_dir() and sub not in candidate_dirs:
+                    candidate_dirs.append(sub)
+            if len(base.parts) > 2:
+                try:
+                    for root, dirs, files in os.walk(base):
+                        rel_parts = Path(root).relative_to(base).parts
+                        if len(rel_parts) > 3:
+                            dirs.clear()
+                            continue
+                        dirs[:] = [
+                            d for d in dirs
+                            if not d.startswith(".")
+                            and d.lower() not in (
+                                "node_modules", "venv", ".git", "__pycache__", ".agents"
+                            )
+                        ]
+                        if any(f.lower().endswith(".rvt") for f in files):
+                            r_path = Path(root)
+                            if r_path not in candidate_dirs:
+                                candidate_dirs.append(r_path)
+                            for extra_name in (
+                                "ifc-assigned",
+                                "result",
+                                "ifc-assigned/result",
+                                "result/ifc-assigned",
+                            ):
+                                extra_dir = r_path / Path(extra_name)
+                                if extra_dir.is_dir() and extra_dir not in candidate_dirs:
+                                    candidate_dirs.append(extra_dir)
+                except OSError:
+                    pass
         candidate_names = [path.name]
         if requested_ifc_path is not None and requested_ifc_path.name not in candidate_names:
             candidate_names.append(requested_ifc_path.name)
@@ -781,6 +872,7 @@ class RevitProjectDelivery:
                 "ifc_path": str(ifc_path),
             }
         cancel_event = threading.Event()
+        set_tool_progress("revit_inspect_ifc", f"正在执行 SZ-IFC 规范自检（专业：{resolved_profession}）并等待 DOCX 报告生成")
         worker = asyncio.create_task(
             asyncio.to_thread(
                 _run_sz_ifc_inspection,

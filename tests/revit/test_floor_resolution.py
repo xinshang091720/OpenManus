@@ -9,10 +9,28 @@ the Revit model.
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 from pathlib import Path
+
+import pytest
 
 from app.revit.room_creation import ArRoomCreationWorkflow
 from app.revit.room_sync import _extract_rooms_and_floor_from_dwg, _floor_from_path
+
+
+class _NoopRevitLock:
+    @asynccontextmanager
+    async def hold(self):
+        yield
+
+    def close(self):
+        pass
+
+
+@pytest.fixture(autouse=True)
+def no_live_revit_mutex(monkeypatch):
+    """Unit tests must not wait for a user's live desktop Revit task."""
+    monkeypatch.setattr("app.revit.room_creation.RevitProcessLock", _NoopRevitLock)
 
 
 class _RoomClient:
@@ -75,6 +93,48 @@ def test_drawing_title_overrides_filename_hint_and_expands_standard_floor_range(
     assert detection["source"] == "drawing_text"
     assert detection["matched_text"] == "六~三十层平面图"
     assert detection["filename_hint"] == 3
+
+
+def test_unambiguous_filename_resolves_when_drawing_only_has_incidental_weak_texts():
+    """Incidental equipment/diagram text must not override an unambiguous filename."""
+    from app.revit.room_sync import _extract_rooms_and_floor_from_texts
+
+    text_items = [
+        {"Text": "三层工坊分体空调室外机", "Text_coordinates": "(0, 0, 0)"},
+        {"Text": "四层小展厅分体空调室外机", "Text_coordinates": "(1, 1, 0)"},
+        {"Text": "五层防火分区示意图", "Text_coordinates": "(2, 2, 0)"},
+        {"Text": "走廊做法参一~四层做法6", "Text_coordinates": "(3, 3, 0)"},
+        {"Text": "办公室", "Text_coordinates": "(10, 20, 0)"},
+    ]
+
+    _rooms, floors, detection = _extract_rooms_and_floor_from_texts(
+        text_items,
+        dwg_filename="综合楼 五层平面图.dwg",
+        fallback_floor=5,
+    )
+
+    assert floors == [5]
+    assert detection["status"] == "resolved"
+    assert detection["source"] == "filename"
+    assert detection["floor_entries"] == [5]
+
+
+def test_range_filename_resolves_standard_floors():
+    """A standard range filename resolves cleanly when drawing text has no strong conflict."""
+    from app.revit.room_sync import _extract_rooms_and_floor_from_texts
+
+    text_items = [
+        {"Text": "办公室", "Text_coordinates": "(10, 20, 0)"},
+    ]
+
+    _rooms, floors, detection = _extract_rooms_and_floor_from_texts(
+        text_items,
+        dwg_filename="综合楼 六~三十层平面图.dwg",
+    )
+
+    assert floors == list(range(6, 31))
+    assert detection["status"] == "resolved"
+    assert detection["source"] == "filename"
 
 
 def test_filename_range_is_not_forced_into_one_floor_and_does_not_raise():
