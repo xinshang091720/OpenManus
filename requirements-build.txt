@@ -6,7 +6,7 @@
 # but makes the packaged room tools fail with "cannot load module more than
 # once per process".  Keep the packager on a release that supports the
 # current NumPy layout.
-pyinstaller==6.21.0
+pyinstaller==6.22.2
 # Used only by build_runtime.ps1 -Obfuscate. Nuitka compiles application
 # modules to native code, unlike PyInstaller which stores Python bytecode.
-nuitka==4.1.3
+nuitka==4.2.1
