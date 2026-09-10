@@ -34,7 +34,17 @@ except ImportError:  # pragma: no cover
     winreg = None
 
 
-_MAX_TIMEOUT_SECONDS = 7200
+def _configured_desktop_timeout_seconds(default_seconds: int = 86400) -> int:
+    raw = os.environ.get("BEESYNC_DELIVERY_TIMEOUT_SECONDS")
+    if raw is not None and raw.strip():
+        try:
+            return int(raw.strip())
+        except ValueError:
+            pass
+    return default_seconds
+
+
+_MAX_TIMEOUT_SECONDS = _configured_desktop_timeout_seconds()
 _DISCIPLINE_ALIASES = {
     "建筑": {"AR", "A", "建筑"},
     "结构": {"ST", "S", "FS", "SS", "结构"},

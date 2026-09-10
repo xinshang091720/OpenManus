@@ -110,7 +110,8 @@ class RevitRunIfcAssignment(BaseTool):
     def _summary(report: dict[str, Any]) -> dict[str, Any]:
         fields = (
             "status", "standard_id", "marjor_name", "clear_existing", "identify_attempts",
-            "returned_unmatched_count", "assigned_count", "low_confidence_group_count",
+            "total_elements", "already_matched_count", "returned_unmatched_count",
+            "assigned_count", "supplementary_assigned_count", "low_confidence_group_count",
             "review_batch_size", "review_batch_count", "max_parallel_review_batches",
             "assignment_message", "saved_to", "saved_model_path", "saved_model_path_status",
         )

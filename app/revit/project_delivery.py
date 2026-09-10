@@ -40,7 +40,20 @@ _PROFESSION_BY_CODE = {
     "E": "电气",
     "T": "电气",
 }
-_MAX_OPERATION_TIMEOUT_SECONDS = 7200
+
+
+def _configured_delivery_timeout_seconds(default_seconds: int = 86400) -> int:
+    raw = os.environ.get("BEESYNC_DELIVERY_TIMEOUT_SECONDS")
+    if raw is not None and raw.strip():
+        try:
+            return int(raw.strip())
+        except ValueError:
+            pass
+    # ponytail: default 86400 (24h) avoids the rigid 7200s ceiling on slow machines.
+    return default_seconds
+
+
+_MAX_OPERATION_TIMEOUT_SECONDS = _configured_delivery_timeout_seconds()
 _IFC_INITIAL_SAVE_WAIT_SECONDS = 30
 _FILE_STABILITY_INTERVAL_SECONDS = 2.0
 _FILE_STABILITY_POLLS = 3

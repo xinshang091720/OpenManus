@@ -17,7 +17,20 @@ DEFAULT_REVIT_API_BASE_URL = "http://127.0.0.1:39521/api/RevitApi"
 # this URL to 127.0.0.1 or collapse that slash: both changes cause HTTP 400.
 LEGACY_DEVELOPMENT_REVIT_API_BASE_URL = "http://localhost:5000//api/RevitApi"
 _DEFAULT_TIMEOUT = object()
-REVIT_OPERATION_TIMEOUT_SECONDS = 2 * 60 * 60
+
+
+def _configured_operation_timeout_seconds() -> float:
+    raw = os.environ.get("BEESYNC_REVIT_OPERATION_TIMEOUT_SECONDS")
+    if raw is not None and raw.strip():
+        try:
+            return float(raw.strip())
+        except ValueError:
+            pass
+    # ponytail: 0.0 means no timeout ceiling (infinite wait for Revit plugin operations).
+    return 0.0
+
+
+REVIT_OPERATION_TIMEOUT_SECONDS = _configured_operation_timeout_seconds()
 
 
 class RevitApiError(RuntimeError):
@@ -242,10 +255,18 @@ class RevitApiClient:
         *,
         timeout_seconds: float | None | object = _DEFAULT_TIMEOUT,
     ) -> Dict[str, Any]:
+        timeout_val = (
+            self.timeout_seconds
+            if timeout_seconds is _DEFAULT_TIMEOUT
+            else timeout_seconds
+        )
+        effective_timeout = (
+            None
+            if (timeout_val is None or (isinstance(timeout_val, (int, float)) and timeout_val <= 0))
+            else timeout_val
+        )
         try:
-            async with httpx.AsyncClient(
-                timeout=self.timeout_seconds if timeout_seconds is _DEFAULT_TIMEOUT else timeout_seconds,
-            ) as client:
+            async with httpx.AsyncClient(timeout=effective_timeout) as client:
                 response = await client.request(
                     method, f"{self.base_url}{path}", json=payload
                 )

@@ -271,10 +271,13 @@ class RevitIfcAssignmentWorkflow:
 
         total_match = re.search(r"合计\s*(\d+)\s*个完成\s*(\d+)\s*个", assignment_message)
         total_elements = int(total_match.group(1)) if total_match else None
+        completed_elements = int(total_match.group(2)) if total_match else None
         already_matched_count = (
             max(0, total_elements - len(elements)) if total_elements is not None else None
         )
-        assigned_count = len(assignments) if assignments else (int(total_match.group(2)) if total_match else 0)
+        # ponytail: when plugin reports total completed elements, use it; fallback to assignments length for mock tests
+        assigned_count = completed_elements if completed_elements is not None else len(assignments)
+        supplementary_assigned_count = len(assignments)
 
         report = {
             "standard_id": standard_id,
@@ -285,6 +288,7 @@ class RevitIfcAssignmentWorkflow:
             "already_matched_count": already_matched_count,
             "returned_unmatched_count": len(elements),
             "assigned_count": assigned_count,
+            "supplementary_assigned_count": supplementary_assigned_count,
             "low_confidence_group_count": sum(1 for item in group_reports if item["low_confidence"]),
             "review_batch_size": self.review_batch_size,
             "review_batch_count": len(batches),
