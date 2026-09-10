@@ -285,7 +285,7 @@ class RuntimeManus(Manus):
             return f"Revit 建筑模型已成功打开：{model_name}{ver_text}" if model_name else "Revit 建筑模型已成功打开"
 
         if normalized == "revit_create_and_name_ar_rooms":
-            room_count = payload.get("room_count")
+            room_count = payload.get("total_created_rooms") or payload.get("room_count")
             named_count = payload.get("named_room_count") or payload.get("named_count")
             save_path = (
                 payload.get("saved_model_path")

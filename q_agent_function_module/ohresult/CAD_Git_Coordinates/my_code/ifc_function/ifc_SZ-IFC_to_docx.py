@@ -596,8 +596,13 @@ def run_sz_ifc_full_inspection(
     cancel_event=None,
 ):
     """Inspect an already loaded IFC and export one verified DOCX report."""
-    started = time.monotonic()
-    deadline = started + max(1, min(int(timeout_seconds), 7200))
+    max_timeout = int(os.environ.get("BEESYNC_DELIVERY_TIMEOUT_SECONDS", "86400"))
+    effective_timeout = (
+        max_timeout
+        if (timeout_seconds is None or int(timeout_seconds) == 7200 or int(timeout_seconds) <= 0)
+        else int(timeout_seconds)
+    )
+    deadline = started + max(1, effective_timeout)
     ifc_path = Path(ifc_file_path).resolve()
     if not ifc_path.is_file() or ifc_path.suffix.lower() != ".ifc":
         raise FileNotFoundError(f"输入的 IFC 文件不存在：{ifc_path}")

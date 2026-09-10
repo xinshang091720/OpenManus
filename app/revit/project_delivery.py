@@ -492,7 +492,16 @@ class RevitProjectDelivery:
         rvt_file_path: str | None = None,
         recovery_model_path: str | None = None,
     ) -> dict[str, Any]:
-        timeout_seconds = max(1, min(int(timeout_seconds), _MAX_OPERATION_TIMEOUT_SECONDS))
+        # ponytail: when timeout_seconds is omitted or legacy 7200 default, upgrade to configured maximum (default 86400s).
+        if timeout_seconds is None or int(timeout_seconds) == 7200 or int(timeout_seconds) <= 0:
+            timeout_seconds = _MAX_OPERATION_TIMEOUT_SECONDS
+        else:
+            timeout_seconds = (
+                min(int(timeout_seconds), _MAX_OPERATION_TIMEOUT_SECONDS)
+                if _MAX_OPERATION_TIMEOUT_SECONDS > 0
+                else int(timeout_seconds)
+            )
+        timeout_seconds = max(1, timeout_seconds)
         path = Path(ifc_file_path)
         if not path.is_absolute() or path.suffix.lower() != ".ifc":
             raise ValueError("ifc_file_path 必须以 .ifc 结尾")
@@ -560,7 +569,7 @@ class RevitProjectDelivery:
                         timeout_seconds=timeout_seconds,
                     )
                 except RevitOperationUnknown:
-                    return self._export_timeout_result(path)
+                    return self._export_timeout_result(path, timeout_seconds)
                 found = await self._wait_for_export_delivery(
                     candidates=candidate_ifc_paths,
                     before=before,
@@ -591,15 +600,16 @@ class RevitProjectDelivery:
                 "export_attempt": 1,
                 "export_session": 1,
             }
-        return self._export_timeout_result(path)
+        return self._export_timeout_result(path, timeout_seconds)
 
     @staticmethod
-    def _export_timeout_result(path: Path) -> dict[str, Any]:
+    def _export_timeout_result(path: Path, timeout_seconds: int | None = None) -> dict[str, Any]:
+        hours = f"{round(timeout_seconds / 3600, 1):g}小时" if timeout_seconds and timeout_seconds > 0 else "设定"
         return {
             "status": "timed_out_unknown",
             "ifc_path": str(path),
             "message": (
-                "IFC 导出等待已达到两小时上限或调用方设置的更短上限，"
+                f"IFC 导出等待已达到{hours}上限或调用方设置的更短上限，"
                 "Revit 最终状态未知。"
             ),
             "export_attempt": 1,
@@ -864,6 +874,16 @@ class RevitProjectDelivery:
         rule_name: str | None = None,
         timeout_seconds: int = 7200,
     ) -> dict[str, Any]:
+        # ponytail: when timeout_seconds is omitted or legacy 7200 default, upgrade to configured maximum (default 86400s).
+        if timeout_seconds is None or int(timeout_seconds) == 7200 or int(timeout_seconds) <= 0:
+            timeout_seconds = _MAX_OPERATION_TIMEOUT_SECONDS
+        else:
+            timeout_seconds = (
+                min(int(timeout_seconds), _MAX_OPERATION_TIMEOUT_SECONDS)
+                if _MAX_OPERATION_TIMEOUT_SECONDS > 0
+                else int(timeout_seconds)
+            )
+        timeout_seconds = max(1, timeout_seconds)
         ifc_path = Path(ifc_file_path)
         if not ifc_path.is_absolute() or not ifc_path.is_file():
             raise ValueError("待检查的 IFC 文件不存在")
@@ -893,7 +913,7 @@ class RevitProjectDelivery:
                 resolved_profession,
                 str(report_path),
                 rule_name,
-                max(1, min(int(timeout_seconds), _MAX_OPERATION_TIMEOUT_SECONDS)),
+                timeout_seconds,
                 cancel_event,
             )
         )

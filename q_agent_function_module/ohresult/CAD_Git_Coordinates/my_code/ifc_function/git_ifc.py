@@ -541,7 +541,9 @@ def get_unique_ifc_path(folder_path, base_name):
         count += 1
 
 
-def wait_for_files_generated(ifc_path, timeout=7200, check_interval=10):
+def wait_for_files_generated(ifc_path, timeout=None, check_interval=10):
+    if timeout is None or timeout == 7200 or timeout <= 0:
+        timeout = int(os.environ.get("BEESYNC_DELIVERY_TIMEOUT_SECONDS", "86400"))
     xlsx_path = f"{ifc_path}.xlsx"
     start_time = time.time()
     logger.info(f"等待文件落地生成: \n  1) {ifc_path}\n  2) {xlsx_path}")

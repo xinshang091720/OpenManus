@@ -385,6 +385,7 @@ class ArRoomCreationWorkflow:
             "model_path": str(model),
             "batch_create_summary": batch_create_msg,
             "total_created_rooms": total_created_rooms,
+            "room_count": total_created_rooms,
             "processed_drawing_count": total_drawings,
             "skipped_drawing_count": len(skipped_drawings),
             "skipped_drawings": skipped_drawings,
