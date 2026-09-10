@@ -81,3 +81,15 @@ def test_workflow_reports_total_completed_elements_when_plugin_returns_summary()
     # Supplementary assigned count by LLM/algorithm is 2
     assert report["supplementary_assigned_count"] == 2
     assert report["returned_unmatched_count"] == 2
+
+
+def test_run_sz_ifc_full_inspection_initialization(tmp_path):
+    from app.revit.project_delivery import _run_sz_ifc_inspection
+
+    non_existent = tmp_path / "test.ifc"
+    # When file does not exist, _run_sz_ifc_inspection must raise FileNotFoundError,
+    # NOT NameError: name 'started' is not defined.
+    with pytest.raises(FileNotFoundError, match="输入的 IFC 文件不存在"):
+        _run_sz_ifc_inspection(str(non_existent), "建筑", None, None, 7200)
+
+

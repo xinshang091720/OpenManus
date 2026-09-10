@@ -596,6 +596,7 @@ def run_sz_ifc_full_inspection(
     cancel_event=None,
 ):
     """Inspect an already loaded IFC and export one verified DOCX report."""
+    started = time.monotonic()
     max_timeout = int(os.environ.get("BEESYNC_DELIVERY_TIMEOUT_SECONDS", "86400"))
     effective_timeout = (
         max_timeout
