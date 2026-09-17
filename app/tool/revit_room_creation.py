@@ -52,10 +52,7 @@ class RevitCreateAndNameArRooms(BaseTool):
                             "description": "Absolute path of the DWG returned for confirmation.",
                         },
                         "floor_numbers": {
-                            "type": "array",
-                            "minItems": 1,
-                            "items": {"type": "number"},
-                            "description": "Confirmed Revit floor number(s), for example [1] or [6, 7, 8].",
+                            "description": "Confirmed Revit floor number(s) or range, for example [1], [6, 7, 8], or a range string like '6-29' / '6~29' / '6至29层'.",
                         },
                     },
                     "required": ["dwg_path", "floor_numbers"],

@@ -20,7 +20,9 @@ from app.revit.project_delivery import prepare_save_folder
 from app.revit.save_result import resolve_fresh_saved_model_path, snapshot_folder_files
 from app.revit.room_sync import (
     _extract_rooms_and_floor_from_texts,
+    _floor_entries_from_title_text,
     _floor_from_path,
+    _parse_floor_reference,
     _points,
     close_autocad_document_if_open,
 )
@@ -86,6 +88,10 @@ class ArRoomCreationWorkflow:
             raise ValueError("floor_overrides must be a list of DWG floor mappings")
 
         available = {cls._path_key(path): path for path in drawings}
+        available_by_name: dict[str, list[Path]] = {}
+        for path in drawings:
+            available_by_name.setdefault(path.name.casefold(), []).append(path)
+
         overrides: dict[str, list[int | float]] = {}
         for item in floor_overrides:
             if not isinstance(item, dict):
@@ -94,30 +100,56 @@ class ArRoomCreationWorkflow:
             raw_numbers = item.get("floor_numbers")
             if not isinstance(raw_path, str) or not raw_path.strip():
                 raise ValueError("floor_overrides.dwg_path must be an absolute DWG path")
-            candidate_path = Path(raw_path)
-            if not candidate_path.is_absolute():
-                raise ValueError("floor_overrides.dwg_path must be an absolute DWG path")
-            key = cls._path_key(candidate_path)
-            if key not in available:
+            candidate_path = Path(raw_path.strip())
+            key = None
+            if candidate_path.is_absolute():
+                norm_key = cls._path_key(candidate_path)
+                if norm_key in available:
+                    key = norm_key
+            if key is None:
+                # Match by filename if uniquely present in dwg_folder_path
+                matches = available_by_name.get(candidate_path.name.casefold(), [])
+                if len(matches) == 1:
+                    key = cls._path_key(matches[0])
+            if key is None:
                 raise ValueError("floor_overrides.dwg_path is not a DWG in dwg_folder_path")
             if key in overrides:
                 raise ValueError("Duplicate floor_overrides mapping for the same DWG")
-            if not isinstance(raw_numbers, list) or not raw_numbers:
+
+            if isinstance(raw_numbers, (int, float)) and not isinstance(raw_numbers, bool):
+                raw_items = [raw_numbers]
+            elif isinstance(raw_numbers, str):
+                raw_items = [raw_numbers]
+            elif isinstance(raw_numbers, list) and raw_numbers:
+                raw_items = raw_numbers
+            else:
                 raise ValueError("floor_overrides.floor_numbers must be a non-empty list")
 
             numbers: list[int | float] = []
-            for raw_number in raw_numbers:
-                if isinstance(raw_number, bool):
+            for item_val in raw_items:
+                if isinstance(item_val, bool):
                     raise ValueError("floor_overrides.floor_numbers must contain numbers")
-                try:
-                    numeric = float(raw_number)
-                except (TypeError, ValueError) as error:
-                    raise ValueError("floor_overrides.floor_numbers must contain numbers") from error
-                if not math.isfinite(numeric):
-                    raise ValueError("floor_overrides.floor_numbers must contain finite numbers")
-                number: int | float = int(numeric) if numeric.is_integer() else numeric
-                if number not in numbers:
-                    numbers.append(number)
+                if isinstance(item_val, (int, float)):
+                    if not math.isfinite(item_val):
+                        raise ValueError("floor_overrides.floor_numbers must contain finite numbers")
+                    num = int(item_val) if float(item_val).is_integer() else item_val
+                    if num not in numbers:
+                        numbers.append(num)
+                elif isinstance(item_val, str):
+                    parsed = _floor_entries_from_title_text(item_val)
+                    if not parsed:
+                        single = _parse_floor_reference(item_val)
+                        if single is not None:
+                            parsed = [single]
+                    if not parsed:
+                        raise ValueError(f"floor_overrides.floor_numbers contains invalid value: '{item_val}'")
+                    for num in parsed:
+                        if num not in numbers:
+                            numbers.append(num)
+                else:
+                    raise ValueError("floor_overrides.floor_numbers must contain numbers")
+            if not numbers:
+                raise ValueError("floor_overrides.floor_numbers must be a non-empty list")
             overrides[key] = numbers
         return overrides
 

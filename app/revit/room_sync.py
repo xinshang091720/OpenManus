@@ -387,6 +387,21 @@ def _resolve_floor_from_local_texts(
             matched_text=texts[0],
         )
 
+    # ponytail: When drawing text has multiple conflicting strong titles (>= 100), but the
+    # DWG filename explicitly matches one of them (e.g. '1栋二单元 六~二十九层 平面图.dwg'
+    # matches '六~二十九层平面图'), the filename confirms which drawing title is primary.
+    if highest_score >= 100 and filename_floors:
+        target_key = tuple(filename_floors)
+        if target_key in by_entries:
+            texts = by_entries[target_key]
+            return _resolved_floor_detection(
+                source="drawing_text",
+                confidence="high",
+                floor_entries=list(target_key),
+                filename_hint=filename_hint,
+                matched_text=texts[0],
+            )
+
     # ponytail: When drawing text only has weak/incidental annotations (< 100)
     # that conflict (e.g. equipment annotations like '三层工坊室外机'), but the
     # DWG filename is unambiguous (e.g. '综合楼 五层平面图.dwg'), the normalized
@@ -401,6 +416,25 @@ def _resolve_floor_from_local_texts(
             filename_hint=filename_hint,
             matched_text=matched_text,
         )
+
+    # ponytail: For standard floor drawings, the overall sheet title is an inclusive range
+    # (e.g. '六~二十九层平面图'), while sub-details/notes cite a single floor (e.g. '二十九层平面图').
+    # If exactly one candidate is an inclusive multi-floor range and all other candidates are
+    # subsets of it, the range represents the full sheet floor coverage.
+    range_candidates = [k for k in by_entries if len(k) > 1]
+    if len(range_candidates) == 1:
+        superset = set(range_candidates[0])
+        other_keys = [k for k in by_entries if k != range_candidates[0]]
+        if all(set(k).issubset(superset) for k in other_keys):
+            target_key = range_candidates[0]
+            texts = by_entries[target_key]
+            return _resolved_floor_detection(
+                source="drawing_text",
+                confidence="high",
+                floor_entries=list(target_key),
+                filename_hint=filename_hint,
+                matched_text=texts[0],
+            )
 
     return _selection_required_floor_detection(
         filename_hint=filename_hint,

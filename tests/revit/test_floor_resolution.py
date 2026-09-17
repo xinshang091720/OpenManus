@@ -227,3 +227,73 @@ def test_user_floor_override_resolves_ambiguous_drawing_before_revit_write(tmp_p
     assert result["status"] == "completed"
     assert [item["floor_num"] for item in client.updates[0]] == list(range(6, 31))
     assert [call[0] for call in client.calls] == ["open", "grid", "get_dwg_text", "create", "update", "save"]
+
+
+def test_standard_floor_plan_disambiguated_by_filename_match():
+    """When drawing text has both a range title and a single-floor note, matching filename resolves it."""
+    from app.revit.room_sync import _resolve_floor_from_local_texts, _floor_entries_from_title_text
+
+    raw_texts = ["六~二十九层平面图", "二十九层平面图"]
+    dwg_filename = "1栋二单元 六~二十九层 平面图.dwg"
+    filename_floors = _floor_entries_from_title_text(dwg_filename)
+    detection = _resolve_floor_from_local_texts(
+        raw_texts,
+        filename_hint=None,
+        filename_floors=filename_floors,
+    )
+    assert detection is not None
+    assert detection["status"] == "resolved"
+    assert detection["floor_entries"] == list(range(6, 30))
+    assert detection["matched_text"] == "六~二十九层平面图"
+
+
+def test_standard_floor_plan_range_candidate_encloses_subset_candidate():
+    """Even without filename match, an inclusive range covering all other candidates wins."""
+    from app.revit.room_sync import _resolve_floor_from_local_texts
+
+    raw_texts = ["六~二十九层平面图", "二十九层平面图"]
+    detection = _resolve_floor_from_local_texts(
+        raw_texts,
+        filename_hint=None,
+        filename_floors=None,
+    )
+    assert detection is not None
+    assert detection["status"] == "resolved"
+    assert detection["floor_entries"] == list(range(6, 30))
+    assert detection["matched_text"] == "六~二十九层平面图"
+
+
+def test_floor_overrides_flexible_formats(tmp_path):
+    """floor_overrides accepts range strings, Chinese text, and filename-only matching."""
+    drawing = tmp_path / "1栋二单元 六~二十九层 平面图.dwg"
+    drawing.write_bytes(b"dwg")
+    drawings = [drawing]
+
+    # String range "6-29"
+    res1 = ArRoomCreationWorkflow._normalise_floor_overrides(
+        [{"dwg_path": str(drawing), "floor_numbers": "6-29"}],
+        drawings,
+    )
+    assert list(res1.values())[0] == list(range(6, 30))
+
+    # String range with Chinese "6至29层"
+    res2 = ArRoomCreationWorkflow._normalise_floor_overrides(
+        [{"dwg_path": str(drawing), "floor_numbers": "6至29层"}],
+        drawings,
+    )
+    assert list(res2.values())[0] == list(range(6, 30))
+
+    # List containing a range string ["6~29"]
+    res3 = ArRoomCreationWorkflow._normalise_floor_overrides(
+        [{"dwg_path": str(drawing), "floor_numbers": ["6~29"]}],
+        drawings,
+    )
+    assert list(res3.values())[0] == list(range(6, 30))
+
+    # Filename-only matching with range string
+    res4 = ArRoomCreationWorkflow._normalise_floor_overrides(
+        [{"dwg_path": "1栋二单元 六~二十九层 平面图.dwg", "floor_numbers": "6至29层"}],
+        drawings,
+    )
+    assert list(res4.values())[0] == list(range(6, 30))
+
