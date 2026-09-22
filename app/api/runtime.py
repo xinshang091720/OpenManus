@@ -242,6 +242,7 @@ class RuntimeManus(Manus):
     tool_progress_interval_seconds: float = 30.0
     revit_write_failure: bool = False
     completed_milestones: list[str] = Field(default_factory=list)
+    pending_input_required: bool = False
 
     _REVIT_WRITE_TOOLS = {
         "revit_run_ifc_assignment",
@@ -286,7 +287,6 @@ class RuntimeManus(Manus):
 
         if normalized == "revit_create_and_name_ar_rooms":
             room_count = payload.get("total_created_rooms") or payload.get("room_count")
-            named_count = payload.get("named_room_count") or payload.get("named_count")
             save_path = (
                 payload.get("saved_model_path")
                 or payload.get("save_as_path")
@@ -295,8 +295,6 @@ class RuntimeManus(Manus):
             details = []
             if room_count:
                 details.append(f"生成房间 {room_count} 个")
-            if named_count:
-                details.append(f"命名房间 {named_count} 个")
             if save_path:
                 details.append(f"模型已另存为 `{save_path}`")
             detail_str = f"（{'，'.join(details)}）" if details else ""
@@ -610,11 +608,8 @@ class RuntimeManus(Manus):
                 question = str(arguments.get("inquire") or "需要你补充信息后才能继续。")
             except (TypeError, ValueError, json.JSONDecodeError):
                 question = "需要你补充信息后才能继续。"
-            if self.completed_milestones:
-                milestones_block = "当前阶段已完成：\n" + "\n".join(f"- {m}" for m in self.completed_milestones)
-                full_content = f"{milestones_block}\n\n{question}"
-            else:
-                full_content = question
+            full_content = question
+            self.pending_input_required = True
             await self._emit(
                 "assistant_message",
                 {"phase": "input_required", "content": full_content},
@@ -730,11 +725,10 @@ class RuntimeManus(Manus):
                     error_message = f"{milestones_block}\n\n{error_message}"
                 self.memory.add_message(Message.assistant_message(error_message))
         if input_question:
-            if self.completed_milestones:
-                milestones_block = "当前阶段已完成：\n" + "\n".join(f"- {m}" for m in self.completed_milestones)
-                full_content = f"{milestones_block}\n\n{input_question}"
-            else:
-                full_content = input_question
+            full_content = await self._generate_user_action_summary_with_llm(
+                tool_name, input_question
+            )
+            self.pending_input_required = True
             await self._emit(
                 "assistant_message",
                 {"phase": "input_required", "content": full_content},
@@ -756,6 +750,36 @@ class RuntimeManus(Manus):
             },
         )
         return observation
+
+    async def _generate_user_action_summary_with_llm(
+        self, tool_name: str, input_question: str
+    ) -> str:
+        """Let LLM autonomously summarize past progress and instruct user when action is required."""
+        context_messages = self.memory.messages[-10:] if self.memory else []
+        prompt = (
+            "当前工具执行提示需要用户在桌面应用中进行手动操作或提供必要确认。\n"
+            "请根据上方执行历史与工具结果，用自然、亲切、专业且精炼的中文完成两件事：\n"
+            "1. 概括当前已完成的核心阶段成果（例如打开的模型、生成的房间数量、IFC导出路径等，只基于实际发生的事情，严禁捏造）；\n"
+            f"2. 向用户清晰指出当前需要手动执行的操作：{input_question}，并提示用户在完成后回复以便继续后续流程（如回复“已加载”或“继续”）。\n"
+            "直接输出这段给用户的答复文本，不要包含思考过程或模板代码。"
+        )
+        try:
+            if getattr(self, "llm", None):
+                summary = await self.llm.ask(
+                    messages=[*context_messages, Message.user_message(prompt)],
+                    stream=False,
+                    temperature=0.3,
+                )
+                if isinstance(summary, str) and summary.strip():
+                    return summary.strip()
+        except Exception as error:
+            logger.warning("LLM-generated stage summary failed: %s", error)
+
+        # Fallback if LLM call is unavailable or in mock test environment
+        if self.completed_milestones:
+            milestones_block = "当前阶段已完成：\n" + "\n".join(f"- {m}" for m in self.completed_milestones)
+            return f"{milestones_block}\n\n{input_question}"
+        return input_question
 
 
 class RuntimeManager:
@@ -957,9 +981,10 @@ class RuntimeManager:
                     "Task completed.",
                 )
                 artifacts = self._extract_artifacts(agent)
-                await self._emit(
-                    run, "assistant_message", {"phase": "final", "content": answer}
-                )
+                if not getattr(agent, "pending_input_required", False):
+                    await self._emit(
+                        run, "assistant_message", {"phase": "final", "content": answer}
+                    )
                 run.status = "completed"
                 await self._emit(
                     run,

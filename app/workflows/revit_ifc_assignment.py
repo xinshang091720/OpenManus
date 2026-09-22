@@ -32,7 +32,7 @@ class RevitWorkflow:
     async def run(
         self,
         rvt_file_path: str,
-        discipline: str,
+        discipline: Optional[str] = None,
         standard_id: int | None = 109003,
         clear_existing: bool = True,
     ) -> dict[str, Any]:
@@ -97,11 +97,18 @@ class RevitRunIfcAssignment(BaseTool):
             },
             "discipline": {
                 "type": "string",
-                "description": "User-confirmed model discipline (AR/ST/AC/PD/EL or its Chinese name); never inferred as a requirement from the filename.",
+                "description": (
+                    "Model discipline: AR-建筑, ST-结构, AC-通风空调, PD-给排水, EL-电气 (or Chinese name). "
+                    "Inferred automatically from rvt_file_path filename if omitted."
+                ),
             },
-            "standard_id": {"type": "integer", "default": 109003},
+            "standard_id": {
+                "type": "integer",
+                "default": 109003,
+                "description": "Regional standard ID for IFC identifiers (default Shenzhen 109003).",
+            },
         },
-        "required": ["rvt_file_path", "discipline"],
+        "required": ["rvt_file_path"],
         "additionalProperties": False,
     }
     event_sink: Any = Field(default=None, exclude=True)
@@ -120,7 +127,7 @@ class RevitRunIfcAssignment(BaseTool):
     async def execute(
         self,
         rvt_file_path: str,
-        discipline: str,
+        discipline: Optional[str] = None,
         standard_id: int | None = 109003,
     ) -> ToolResult:
         try:

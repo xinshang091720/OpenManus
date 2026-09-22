@@ -339,3 +339,41 @@ def test_workflow_commits_assignment_even_when_unmatched_elements_is_empty():
     assert report["assigned_count"] == 705
     assert "合计705个完成705个" in report["assignment_message"]
 
+
+def test_infer_discipline_from_path():
+    from app.revit.workflow import infer_discipline_from_path, resolve_major
+
+    assert infer_discipline_from_path(r"C:\Models\立新水库北学校_地下_AC.rvt") == "通风空调"
+    assert infer_discipline_from_path(r"C:\Models\立新水库北学校_地下_ST.rvt") == "结构"
+    assert infer_discipline_from_path(r"C:\Models\立新水库北学校_地下_PD.rvt") == "给排水"
+    assert infer_discipline_from_path(r"C:\Models\立新水库北学校_地下_EL.rvt") == "电气"
+    assert infer_discipline_from_path(r"C:\Models\0513_js瑞府_地下室_AR-B3.rvt") == "建筑"
+
+    # Test resolve_major auto inference when discipline is omitted or empty
+    assert resolve_major(None, r"C:\Models\立新水库北学校_地下_AC.rvt") == "通风空调"
+    assert resolve_major("", r"C:\Models\立新水库北学校_地下_AC.rvt") == "通风空调"
+
+    # When model path clearly has AC but agent mistakenly passed default '建筑' / 'AR'
+    assert resolve_major("建筑", r"C:\Models\立新水库北学校_地下_AC.rvt") == "通风空调"
+    assert resolve_major("AR", r"C:\Models\立新水库北学校_地下_AC.rvt") == "通风空调"
+
+
+def test_workflow_automatically_deduces_ac_discipline_and_standard_id():
+    from app.revit.workflow import RevitIfcAssignmentWorkflow
+
+    class ACRecordingClient(RecordingClient):
+        pass
+
+    client = ACRecordingClient()
+    report = asyncio.run(
+        RevitIfcAssignmentWorkflow(client).run(
+            r"C:\Models\立新水库北学校_地下_AC.rvt",
+            discipline=None,
+            standard_id=109003,
+            clear_existing=True,
+        )
+    )
+    assert ("identify", 109003, "通风空调") in client.calls
+    assert report["marjor_name"] == "通风空调"
+    assert report["standard_id"] == 109003
+

@@ -403,13 +403,19 @@ class ArRoomCreationWorkflow:
             }
         )
         batch_create_msg = created.get("msg") or "房间创建完成"
-        created_counts = [int(n) for n in re.findall(r"共生成\s*(\d+)\s*个房间", batch_create_msg)]
+        # Parse per-floor room creation counts from BatchCreateRooms msg:
+        # e.g. "B3(AR-12.800)楼层共生成122个房间\nB2(AR-9.200)楼层共生成8个房间\nB1(AR-5.600)楼层共生成0个房间\n"
+        floor_created_matches = re.findall(r"([^\n\r]+?楼层)共生成\s*(\d+)\s*个房间", batch_create_msg)
+        per_floor_created_rooms = {floor.strip(): int(count) for floor, count in floor_created_matches}
+        created_counts = [int(count) for _, count in floor_created_matches] or [
+            int(n) for n in re.findall(r"共生成\s*(\d+)\s*个房间", batch_create_msg)
+        ]
         total_created_rooms = sum(created_counts) if created_counts else None
-        named_room_count = sum(per_floor_counts.values())
+        # User requested: Only report generated room counts, do NOT report DWG room text count as "named_room_count".
         summary_text = (
-            f"已在模型中批量生成 {total_created_rooms} 个房间，其中已根据图纸匹配并命名 {named_room_count} 个房间。"
+            f"已在模型中批量生成 {total_created_rooms} 个房间并完成房间命名。"
             if total_created_rooms is not None
-            else f"已根据图纸匹配并命名 {named_room_count} 个房间。"
+            else "已在模型中完成房间生成与命名。"
         )
 
         return {
@@ -417,12 +423,12 @@ class ArRoomCreationWorkflow:
             "model_path": str(model),
             "batch_create_summary": batch_create_msg,
             "total_created_rooms": total_created_rooms,
+            "per_floor_created_rooms": per_floor_created_rooms,
             "room_count": total_created_rooms,
             "processed_drawing_count": total_drawings,
             "skipped_drawing_count": len(skipped_drawings),
             "skipped_drawings": skipped_drawings,
-            "named_room_count": named_room_count,
-            "per_floor_named_count": per_floor_counts,
+            "named_room_count": sum(per_floor_counts.values()),  # Keep for backwards compatibility
             "room_summary": summary_text,
             "message": update.get("msg", "房间命名完成"),
             "saved_to": saved_to,

@@ -29,16 +29,66 @@ class WorkflowError(RuntimeError):
         super().__init__(f"{stage}: {detail}")
 
 
-def resolve_major(discipline: str) -> str:
-    """Resolve a user-confirmed discipline without treating filenames as policy."""
-    value = discipline.strip()
+def infer_discipline_from_path(path: Any) -> str | None:
+    """Infer BIM major/discipline from model filename tokens or abbreviations."""
+    if not path:
+        return None
+    from pathlib import Path
+    stem = Path(str(path)).stem.upper()
+    tokens = [token for token in re.split(r"[_\-.\s]+", stem) if token]
+    token_set = set(tokens)
+
+    # Check exact token matches first
+    for code, name in MAJOR_MAPPING.items():
+        if code in token_set or name.upper() in token_set:
+            return name
+
+    # Check alias/partial tokens
+    alias_map = {
+        "AR": "建筑", "A": "建筑", "建筑": "建筑",
+        "ST": "结构", "S": "结构", "FS": "结构", "SS": "结构", "结构": "结构",
+        "AC": "通风空调", "M": "通风空调", "暖通": "通风空调", "通风空调": "通风空调",
+        "PD": "给排水", "P": "给排水", "给排水": "给排水",
+        "EL": "电气", "E": "电气", "T": "电气", "电气": "电气",
+    }
+    for token in tokens:
+        if token in alias_map:
+            return alias_map[token]
+
+    # Check substring patterns like _AC_ or _AC.
+    for code, name in (("AC", "通风空调"), ("PD", "给排水"), ("EL", "电气"), ("ST", "结构"), ("AR", "建筑")):
+        if re.search(rf"(?<![A-Z0-9]){code}(?![A-Z0-9])", stem):
+            return name
+    return None
+
+
+def resolve_major(discipline: Optional[str] = None, rvt_file_path: Optional[str] = None) -> str:
+    """Resolve model discipline from parameter or infer from file path."""
+    inferred = infer_discipline_from_path(rvt_file_path) if rvt_file_path else None
+    value = (discipline or "").strip()
     if not value:
-        raise WorkflowError("resolve_major", "请先由用户确认模型专业")
+        if inferred:
+            return inferred
+        raise WorkflowError("resolve_major", "请先由用户确认模型专业或提供包含专业代码的模型路径")
+
     code = value.upper()
+    resolved = None
     if code in MAJOR_MAPPING:
-        return MAJOR_MAPPING[code]
-    if value in MAJOR_MAPPING.values():
-        return value
+        resolved = MAJOR_MAPPING[code]
+    elif value in MAJOR_MAPPING.values():
+        resolved = value
+
+    # If resolved to default "建筑", but filename explicitly indicates another discipline (e.g. AC / 通风空调),
+    # prioritize the filename's unambiguous discipline to prevent misclassifying MEP models as architectural.
+    if inferred and resolved == "建筑" and inferred != "建筑":
+        return inferred
+
+    if resolved:
+        return resolved
+
+    if inferred:
+        return inferred
+
     supported = "、".join([*MAJOR_MAPPING, *MAJOR_MAPPING.values()])
     raise WorkflowError("resolve_major", f"不支持的模型专业：{value}；可用值为 {supported}")
 
@@ -98,11 +148,11 @@ class RevitIfcAssignmentWorkflow:
     async def run(
         self,
         rvt_file_path: str,
-        discipline: str,
+        discipline: Optional[str] = None,
         standard_id: int | None = 109003,
         clear_existing: bool = True,
     ) -> dict[str, Any]:
-        major = resolve_major(discipline)
+        major = resolve_major(discipline, rvt_file_path=rvt_file_path)
         standard_id = 109003 if standard_id is None else int(standard_id)
         # IFC matching is a rebuild operation in this delivery workflow.  Keep
         # the argument for source compatibility, but never allow a caller to

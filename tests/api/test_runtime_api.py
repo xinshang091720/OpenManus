@@ -657,3 +657,41 @@ def test_runtime_prepends_completed_milestones_to_user_action_required(monkeypat
     assert "请在 SZ-IFC 中手动加载目标模型：C:\\test.ifc" in content
 
 
+def test_runtime_generates_user_action_summary_with_llm(monkeypatch):
+    events = []
+
+    async def sink(event, data):
+        events.append((event, data))
+
+    agent = RuntimeManus(event_sink=sink)
+
+    class FakeLLM:
+        async def ask(self, *args, **kwargs):
+            return "已为您完成模型打开与IFC导出。请在SZ-IFC软件中手动加载 C:\\test.ifc，加载完成后回复我继续。"
+
+    agent.llm = FakeLLM()
+
+    observation = json.dumps({
+        "status": "user_action_required",
+        "message": "请在 SZ-IFC 中手动加载目标模型",
+        "ifc_path": r"C:\test.ifc",
+    })
+
+    async def fake_tool(self, command):
+        return observation
+
+    monkeypatch.setattr("app.api.runtime.Manus.execute_tool", fake_tool)
+
+    cmd = ToolCall(
+        id="sz-2",
+        function={"name": "mcp_revit_local_revit_inspect_ifc", "arguments": "{}"},
+    )
+    asyncio.run(agent.execute_tool(cmd))
+
+    input_req = next(data for ev, data in events if ev == "assistant_message")
+    content = input_req["content"]
+    assert input_req["phase"] == "input_required"
+    assert "已为您完成模型打开与IFC导出" in content
+    assert "当前阶段已完成：" not in content  # Verified: Not using hardcoded template!
+
+
