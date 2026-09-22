@@ -1,0 +1,29 @@
+revit:
+  # 验证基点接口
+  verify_datum_mark: "http://localhost:5000/api/RevitApi/BasePointSettingIsCorrect"
+  # 更新基点接口
+  update_datum_mark: "http://localhost:5000/api/RevitApi/BasePointSetting"
+  # 得到dwg图纸中所有文字，文字对应的坐标对应的图层接口
+  get_dwg_text_coordinates_layer: "http://localhost:5000/api/RevitApi/GetDwgText"
+  # 得到计算平移量的数据接口
+  get_rvtdwgGriddata: "http://localhost:5000/api/RevitApi/DwgRevitGridData"
+  # 更新房间名称接口
+  update_roomName: "http://localhost:5000/api/RevitApi/UpdateRoomName"
+  # 创建 Revit 模型文件接口
+  create_model: "http://localhost:5000/api/RevitApi/CreateModel"
+  # 创建标高接口
+  create_level_view: "http://localhost:5000/api/RevitApi/CreateLeveView"
+
+get_base_point:
+  # x和y坐标在图纸中的最大距离
+  PAIR_MAX_DISTANCE: 20000.0
+  # MAD 离群剥离阈值
+  MAD_THRESHOLD: 3.5
+
+room_coordinates:
+  # 模型判断判断房间名称最大并发数
+  room_name_llm_max_workers: 10
+  # 调用revit接口最大重置次数
+  RETRY_TIMES: 2
+  # 调用revit接口重置时指数退避基础间隔（秒）：3s → 9s → 27s
+  RETRY_BASE_DELAY: 3
