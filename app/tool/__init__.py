@@ -31,6 +31,7 @@ _EXPORTS = {
     "EnsureAutocadRunning": ("app.tool.desktop_bim", "EnsureAutocadRunning"),
     "SzIfcOpenModel": ("app.tool.desktop_bim", "SzIfcOpenModel"),
     "CadRunCode": ("app.tool.cad_execute", "CadRunCode"),
+    "RevitBimModeling": ("app.tool.revit_modeling", "RevitBimModeling"),
 }
 
 __all__ = list(_EXPORTS)

@@ -221,3 +221,8 @@ Installer/
 
 # Local private notes
 历来检查*.md
+
+# Local scratch and external subrepos
+.tmp/
+bim-modeling-cs/
+

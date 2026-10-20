@@ -14,7 +14,7 @@ from typing import Any
 
 from app.logger import logger
 from app.mcp.revit_lock import RevitProcessLock
-from app.revit.client import RevitApiClient
+from app.revit.client import RevitApiClient, RevitApiError
 from app.revit.operations import call_revit_operation
 from app.revit.project_delivery import prepare_save_folder
 from app.revit.save_result import resolve_fresh_saved_model_path, snapshot_folder_files
@@ -225,10 +225,30 @@ class ArRoomCreationWorkflow:
                     drawing_index=index,
                     drawing_count=total_drawings,
                 )
-                grid = await call_revit_operation(
-                    self.client, "DwgRevitGridData", self.client.dwg_revit_grid_data, str(dwg_path)
-                )
+                try:
+                    grid = await call_revit_operation(
+                        self.client, "DwgRevitGridData", self.client.dwg_revit_grid_data, str(dwg_path)
+                    )
+                except RevitApiError as error:
+                    reason = str(error)
+                    logger.warning(f"跳过图纸 {dwg_path.name}：{reason}")
+                    skipped_drawings.append({"path": str(dwg_path), "reason": f"无有效楼层轴网: {reason}"})
+                    continue
+
                 rvt_grid, dwg_grid = grid.get("rvtGrid", {}), grid.get("dwgGrid", {})
+                grid_msg = grid.get("msg") or ""
+                if (
+                    "未找到" in grid_msg
+                    or not isinstance(rvt_grid, dict)
+                    or not isinstance(dwg_grid, dict)
+                    or not rvt_grid.get("Begin_Position")
+                    or not dwg_grid.get("Begin_Position")
+                ):
+                    reason = grid_msg if "未找到" in grid_msg else "未找到 Revit 与 DWG 匹配的垂直相交轴网对"
+                    logger.warning(f"跳过图纸 {dwg_path.name}：{reason}")
+                    skipped_drawings.append({"path": str(dwg_path), "reason": f"无有效楼层轴网: {reason}"})
+                    continue
+
                 try:
                     rvt_line, dwg_line = _points(rvt_grid), _points(dwg_grid)
                     alignment = validate_translation_alignment(

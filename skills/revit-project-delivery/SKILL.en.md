@@ -8,7 +8,6 @@ description: English reference for local Revit, AutoCAD/TArch, and SZ-IFC delive
 Select only the capability needed for the current request:
 
 - `revit_set_base_point` writes base-point data extracted from a supplied DWG.
-- `ensure_autocad_running` reuses AutoCAD 2020 or selects its registered installation. When the user gives an absolute `.lnk`, pass it as `shortcut_path`; the tool verifies that its target is the registered AutoCAD 2020 and opens it through Windows Shell. Otherwise it uses the matching official Start Menu shortcut. It returns ready only after the window, versioned COM, and PID agree. AutoCAD 2026 may remain open but is never used by the room workflow. TArch loads with CAD; no TArch command is sent during launch.
 - `revit_create_and_name_ar_rooms` creates and names rooms in a user-confirmed AR model, then safely saves it.
 - `revit_run_ifc_assignment` assigns identifiers only when the user explicitly requests assignment or reassignment.
 - `revit_open_project_model` opens a unique RVT with the matching Revit release and waits until the exact model window and Revit bridge are ready. After `ready`, continue directly to the next business tool; do not ask the user to reconfirm an already-open model.

@@ -4,7 +4,6 @@ mcp_bindings:
     tools:
       - revit_launch_versioned_model
       - revit_open_project_model
-      - ensure_autocad_running
       - revit_create_and_name_ar_rooms
       - revit_preview_room_sync
       - revit_apply_room_sync

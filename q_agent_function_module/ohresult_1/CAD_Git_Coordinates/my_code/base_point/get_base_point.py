@@ -12,7 +12,11 @@ _config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__fi
 with open(_config_path, "r", encoding="utf-8") as f:
     config = yaml.safe_load(f)
 
-get_dwg_text_coordinates_layer = config["revit"]["get_dwg_text_coordinates_layer"]
+_env_revit_base = os.environ.get("BEESYNC_REVIT_API_BASE_URL")
+if _env_revit_base:
+    get_dwg_text_coordinates_layer = f"{_env_revit_base.rstrip('/')}/GetDwgText"
+else:
+    get_dwg_text_coordinates_layer = config["revit"]["get_dwg_text_coordinates_layer"]
 
 # 拆分 X/Y 文字互配时允许的最大距离（图形单位），超出视为巧合不配对
 PAIR_MAX_DISTANCE = config["get_base_point"]["PAIR_MAX_DISTANCE"]

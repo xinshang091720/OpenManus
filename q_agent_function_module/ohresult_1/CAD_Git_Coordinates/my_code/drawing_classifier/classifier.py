@@ -45,7 +45,11 @@ _config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__fi
 with open(_config_path, "r", encoding="utf-8") as f:
     config = yaml.safe_load(f)
 
-get_dwg_text_coordinates_layer = config["revit"]["get_dwg_text_coordinates_layer"]
+_env_revit_base = os.environ.get("BEESYNC_REVIT_API_BASE_URL")
+if _env_revit_base:
+    get_dwg_text_coordinates_layer = f"{_env_revit_base.rstrip('/')}/GetDwgText"
+else:
+    get_dwg_text_coordinates_layer = config["revit"]["get_dwg_text_coordinates_layer"]
 
 
 class DrawingClassifier:
@@ -57,8 +61,10 @@ class DrawingClassifier:
     )
 
     def __init__(self, revit_api_url: Optional[str] = None, timeout: Optional[int] = None):
-        self.revit_api_url = revit_api_url or get_dwg_text_coordinates_layer
-        self.timeout = timeout  # 默认 None：不做任何时间限制，完全等待 Revit 执行完毕
+        _env = os.environ.get("BEESYNC_REVIT_API_BASE_URL")
+        _default = f"{_env.rstrip('/')}/GetDwgText" if _env else get_dwg_text_coordinates_layer
+        self.revit_api_url = revit_api_url or _default
+        self.timeout = timeout if timeout is not None else 5.0  # 默认 5 秒安全超时，防止 Revit 忙碌或弹窗时永久死锁
 
     @classmethod
     def match_major_and_sub(cls, text: str) -> Optional[Tuple[str, str, str]]:

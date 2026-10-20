@@ -6,7 +6,6 @@ mcp_bindings:
       - revit_launch_application
       - revit_launch_versioned_model
       - revit_open_project_model
-      - ensure_autocad_running
       - sz_ifc_open_model
       - revit_set_base_point
       - revit_create_and_name_ar_rooms

@@ -9,7 +9,11 @@ logger = setup_logger()
 _config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.yaml")
 with open(_config_path, "r", encoding="utf-8") as f:
     config = yaml.safe_load(f)
-update_datum_mark = config["revit"]["update_datum_mark"]
+_env_revit_base = os.environ.get("BEESYNC_REVIT_API_BASE_URL")
+if _env_revit_base:
+    update_datum_mark = f"{_env_revit_base.rstrip('/')}/BasePointSetting"
+else:
+    update_datum_mark = config["revit"]["update_datum_mark"]
 
 def _clean_str(val: Any) -> str:
     """辅助函数：安全转换字符串，避免将 None 转成 'None' 字符串"""

@@ -84,8 +84,8 @@ def clean_noise_from_filename(filename: str) -> str:
 class ElevationPlanMatcher:
     """标高与平面图智能对齐挂载器"""
 
-    # 1. 屋顶层图纸专属：字面必须包含“屋顶”
-    ROOF_TOP_PATTERNS = [r"屋顶"]
+    # 1. 屋顶层图纸专属：字面必须包含“屋顶”或“屋架”
+    ROOF_TOP_PATTERNS = [r"屋顶", r"屋架"]
 
     # 2. 屋面层图纸专属：字面必须包含“屋面”
     ROOF_SURFACE_PATTERNS = [r"屋面"]
@@ -162,9 +162,24 @@ class ElevationPlanMatcher:
         if any(re.search(p, name, re.IGNORECASE) for p in cls.ROOF_SURFACE_PATTERNS):
             coverage.add("ROOF")
 
-        # 4. 第四步：检查连续跨层 / 标准层区间（如 "6~30层", "六~三十层", "2-5F", "二至五层"）
+        # 4. 第四步：检查地下连续跨层区间（如 "地下一层~地下三层", "负1~负3层", "B1-B3"）
+        basement_range = re.search(
+            r'(?:地下|负|[bB])\s*([0-9一二三四五六七八九十]+)(?:层)?\s*[~～\-—–至到]\s*(?:地下|负|[bB])?\s*([0-9一二三四五六七八九十]+)\s*(?:层|[fF])?',
+            name,
+            re.IGNORECASE
+        )
+        if basement_range:
+            b_start = _parse_chinese_or_arabic_int(basement_range.group(1))
+            b_end = _parse_chinese_or_arabic_int(basement_range.group(2))
+            if b_start is not None and b_end is not None:
+                min_b, max_b = min(b_start, b_end), max(b_start, b_end)
+                for f in range(-max_b, -min_b + 1):
+                    coverage.add(f)
+                return coverage
+
+        # 5. 第五步：检查连续跨层 / 标准层区间（如 "6~30层", "六~三十层", "2-5F", "二至五层", "5~11", "5~11张", "5~11楼面"）
         range_match = re.search(
-            r'([0-9一二三四五六七八九十]+)\s*[~～\-至到]\s*([0-9一二三四五六七八九十]+)\s*(?:层|[fF]|标准层)',
+            r'([0-9一二三四五六七八九十百]+)\s*[~～\-—–至到]\s*([0-9一二三四五六七八九十百]+)\s*(?:层|[fF]|标准层|楼面|张)?',
             name
         )
         if range_match:
@@ -175,7 +190,7 @@ class ElevationPlanMatcher:
                     coverage.add(f)
                 return coverage
 
-        # 5. 第五步：检查地下层（如 "地下一层", "地下1层", "负一层", "-1F", "B1", "B1层", "BF1"）
+        # 6. 第六步：检查地下层（如 "地下一层", "地下1层", "负一层", "-1F", "B1", "B1层", "BF1"）
         basement_match = re.search(
             r'(?:地下|负)\s*([0-9一二三四五六七八九十]+)\s*层|[bB](?:[fF])?\s*([0-9]+)(?:层|[fF])?|(?<!\d)-([0-9]+)[fF]',
             name,
@@ -188,7 +203,7 @@ class ElevationPlanMatcher:
                 coverage.add(-abs(b_num))
                 return coverage
 
-        # 6. 第六步：检查地上普通单层（如 "一层", "首层", "三层", "1F", "4F"）
+        # 7. 第七步：检查地上普通单层（如 "一层", "首层", "三层", "1F", "4F"）
         single_match = re.search(
             r'(?:第|\b)?([0-9一二三四五六七八九十首]+)\s*(?:层|[fF])',
             name,
@@ -201,7 +216,7 @@ class ElevationPlanMatcher:
                 coverage.add(num)
                 return coverage
 
-        # 7. 若命中屋面，保留 ROOF
+        # 8. 若命中屋面，保留 ROOF
         if coverage and "ROOF" in coverage:
             return coverage
 
@@ -239,7 +254,8 @@ class ElevationPlanMatcher:
                 return []
             with open(_config_path, "r", encoding="utf-8") as f:
                 cfg = yaml.safe_load(f)
-            url = cfg.get("revit", {}).get("get_dwg_text_coordinates_layer")
+            _env = os.environ.get("BEESYNC_REVIT_API_BASE_URL")
+            url = f"{_env.rstrip('/')}/GetDwgText" if _env else cfg.get("revit", {}).get("get_dwg_text_coordinates_layer")
             if not url:
                 return []
             resp = requests.post(url, json={"dwgFilePath": str(p.resolve())}, timeout=10)
@@ -268,18 +284,27 @@ class ElevationPlanMatcher:
             return 0
         s = str(floor_str).strip().upper()
 
-        # 1. 屋面层系列：带有编号的 RF01, RF02, RF01(S)... 或包含“屋面/天面”，按之前屋面层逻辑处理
-        if re.search(r'RF0\d', s) or "屋面" in s or "天面" in s:
+        # 0. 特殊非楼层参照标高：室外地坪、女儿墙、压顶、檐口等直接返回原样，严禁被当作地上层误匹配首层平面图
+        if any(k in s for k in ("地坪", "女儿墙", "压顶", "檐口")):
+            return s
+
+        # 1. 屋面层系列：带有编号的 RF01, RF02, RF01(S)... 或包含“屋面/天面”，或顶层标注“结构”，按屋面层逻辑处理
+        if re.search(r'RF0\d', s) or "屋面" in s or "天面" in s or s == "结构":
             return "ROOF"
 
         # 2. 屋顶层专属：纯 RF / RF(S)（不带01编号）或字面包含“屋顶”，专一匹配屋顶层图纸
         if "屋顶" in s or re.match(r'^RF(?:\([^\)]*\))?$', s, re.IGNORECASE):
             return "ROOF_TOP"
 
-        # 3. 地下室系列：B1, B2, -1F, -2F 等
+        # 3. 地下室系列：B1, B2, -1F, -2F, 半地下一层, 地下一层 等
         b_match = re.match(r'^(?:B|-)(\d+)', s)
         if b_match:
             return -int(b_match.group(1))
+        cn_b_match = re.match(r'^(?:半)?地下([一二三四五六七八九十\d]+)层?$', s)
+        if cn_b_match:
+            c = cn_b_match.group(1)
+            val = int(c) if c.isdigit() else _CN_NUM_MAP.get(c, 1)
+            return -val
 
         # 4. 地上层系列：F1, F2, F1_0.000, 1F, 2F 等
         f_match = re.match(r'^(?:F)?(\d+)', s)
@@ -292,12 +317,14 @@ class ElevationPlanMatcher:
     def match_elevations_with_plans(
         cls,
         elevation_records: List[Dict[str, Any]],
-        plan_drawings: List[str]
+        plan_drawings: List[str],
+        floor_overrides: Optional[List[Dict[str, Any]]] = None,
     ) -> List[Dict[str, Any]]:
         """
         核心匹配函数：输入标高列表与平面图路径列表，为每个标高挂载对应的平面图
         :param elevation_records: 标高系统产出的列表，例如 [{"floor": "F1", "elevation": "0.000"}, ...]
         :param plan_drawings: 平面图 DWG 路径列表
+        :param floor_overrides: 可选楼层映射覆盖列表
         :return: 挂载后的新列表，每项保证包含 "dwg": List[str]
         """
         if not elevation_records:
@@ -311,6 +338,32 @@ class ElevationPlanMatcher:
                 continue
             cov = cls.parse_plan_floor_coverage(p_str)
             plan_coverage_map[p_str] = cov
+
+        # 应用人工或模型决策覆盖映射 (floor_overrides)
+        if floor_overrides:
+            for ov in floor_overrides:
+                if not isinstance(ov, dict):
+                    continue
+                ov_dwg = ov.get("dwg_path") or ov.get("dwg_name") or ov.get("dwg")
+                if not ov_dwg:
+                    continue
+                ov_floors = set()
+                raw_floors = ov.get("floors") or ov.get("floor_numbers") or ov.get("floor_range")
+                if isinstance(raw_floors, (list, tuple, set)):
+                    for f in raw_floors:
+                        norm_f = cls.normalize_elevation_floor_id(str(f))
+                        ov_floors.add(norm_f)
+                elif isinstance(raw_floors, str):
+                    cov = cls.parse_plan_floor_coverage(raw_floors)
+                    ov_floors.update(cov)
+                elif isinstance(raw_floors, int):
+                    ov_floors.add(raw_floors)
+
+                if ov_floors:
+                    target_key = str(ov_dwg).strip().lower()
+                    for p_str in list(plan_coverage_map.keys()):
+                        if target_key in str(p_str).lower():
+                            plan_coverage_map[p_str] = ov_floors
 
         # 检查图纸端：是否存在包含“屋顶”的图纸，是否存在包含“屋面”的图纸
         has_roof_top = any("ROOF_TOP" in cov for cov in plan_coverage_map.values())
@@ -365,13 +418,15 @@ class ElevationPlanMatcher:
         elevation_pipeline_data: Union[Dict[str, Any], List[Dict[str, Any]]],
         plan_drawings_or_classifier_result: Union[List[str], Dict[str, Any]],
         marjorName: Union[str, List[str], None] = None,
-        target_majors: Union[str, List[str], None] = None
+        target_majors: Union[str, List[str], None] = None,
+        floor_overrides: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         """
         上层便捷接入入口：支持直接接收 pipeline 的返回字典与分类器的返回结果
         :param elevation_pipeline_data: 标高主流程字典 {"data": [{"floor": "...", "elevation": "..."}, ...]}
         :param plan_drawings_or_classifier_result: 平面图路径列表，或分类器返回的字典 MultiMajorClassifiedResult
         :param marjorName: 专业名称（如 '结构'，或 '建筑'）
+        :param floor_overrides: 可选楼层映射覆盖列表
         :return: {"msg": "...", "data": [...], "leveDatas": [...]}
         """
         # 统一参数名
@@ -412,7 +467,7 @@ class ElevationPlanMatcher:
                 "leveDatas": []
             }
 
-        matched_data = cls.match_elevations_with_plans(raw_records, plan_list)
+        matched_data = cls.match_elevations_with_plans(raw_records, plan_list, floor_overrides=floor_overrides)
 
         # 自闭环质检 2：检测是否所有楼层都成功匹配到平面图 DWG
         unmatched_floors = [
@@ -436,13 +491,15 @@ def bind_elevations_and_plans(
     elevation_data: Union[Dict[str, Any], List[Dict[str, Any]]],
     plan_drawings: Union[List[str], Dict[str, Any]],
     marjorName: Union[str, List[str], None] = None,
-    target_majors: Union[str, List[str], None] = None
+    target_majors: Union[str, List[str], None] = None,
+    floor_overrides: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """便捷调用函数，统一参数名称 marjorName"""
     return ElevationPlanMatcher.bind_pipeline_result(
         elevation_data if isinstance(elevation_data, dict) else {"data": elevation_data},
         plan_drawings,
-        marjorName=marjorName if marjorName is not None else target_majors
+        marjorName=marjorName if marjorName is not None else target_majors,
+        floor_overrides=floor_overrides,
     )
 
 

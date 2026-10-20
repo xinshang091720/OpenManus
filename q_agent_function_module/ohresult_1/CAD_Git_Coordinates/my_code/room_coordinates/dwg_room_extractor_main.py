@@ -17,8 +17,14 @@ _config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__fi
 with open(_config_path, "r", encoding="utf-8") as f:
     config = yaml.safe_load(f)
 
-get_dwg_text_coordinates_layer = config["revit"]["get_dwg_text_coordinates_layer"]
-get_rvtdwgGriddata = config["revit"]["get_rvtdwgGriddata"]
+_env_revit_base = os.environ.get("BEESYNC_REVIT_API_BASE_URL")
+if _env_revit_base:
+    _base = _env_revit_base.rstrip('/')
+    get_dwg_text_coordinates_layer = f"{_base}/GetDwgText"
+    get_rvtdwgGriddata = f"{_base}/DwgRevitGridData"
+else:
+    get_dwg_text_coordinates_layer = config["revit"]["get_dwg_text_coordinates_layer"]
+    get_rvtdwgGriddata = config["revit"]["get_rvtdwgGriddata"]
 
 # ---- 重试配置 ----
 RETRY_TIMES = config["room_coordinates"]["RETRY_TIMES"]         # 最多重试 2 次（每项最多尝试 3 遍）

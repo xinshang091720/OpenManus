@@ -27,11 +27,12 @@ class FloorStandardizer:
         if not records:
             return []
 
-        # 1. 统计顶层集合（屋顶、屋面、RF）的出现索引
+        # 1. 统计通用顶层集合（屋顶、屋面、RF）的出现索引
+        # 注意：如果图纸原文是“女儿墙”、“结构”、“机房”等具体语义层，不作为通用屋面无脑编号为 RF01/RF02
         roof_indices = []
         for idx, item in enumerate(records):
             floor_name = str(item.get("floor") or "").strip()
-            if any(k in floor_name for k in ("屋顶", "屋面", "RF")):
+            if floor_name in ("屋顶", "屋顶层", "屋面", "屋面层") or re.match(r'^RF\d*$', floor_name, re.IGNORECASE):
                 roof_indices.append(idx)
 
         standardized_results: List[Dict[str, Any]] = []
@@ -54,7 +55,7 @@ class FloorStandardizer:
             # 3. 基础楼层名标准化映射
             std_floor = cls._map_single_floor(raw_floor)
 
-            # 4. 顶层集合（屋顶/屋面）自底向上规范化：
+            # 4. 通用顶层集合（屋顶/屋面）自底向上规范化：
             # 首个（最底部的封顶层）为 RF，后续上方多屋面自底向上为 RF01, RF02...
             if idx in roof_indices:
                 order_in_roof = roof_indices.index(idx)
@@ -63,9 +64,10 @@ class FloorStandardizer:
                 else:
                     std_floor = f"RF{order_in_roof:02d}"
 
-            # 5. 如果有结构标记，追加 (S)
-            if has_structure_mark and "(S)" not in std_floor:
-                std_floor = f"{std_floor}(S)"
+            # 5. 如果有结构标记，追加 (S)（特定语义名称如“结构”、“室外地坪”、“女儿墙”不追加）
+            if has_structure_mark and "(S)" not in std_floor and "（S）" not in std_floor:
+                if std_floor not in ("结构", "室外地坪", "女儿墙"):
+                    std_floor = f"{std_floor}(S)"
 
             # 6. 组装最终结果：只保留 floor 和 elevation，彻底剔除 raw_text
             standardized_results.append({

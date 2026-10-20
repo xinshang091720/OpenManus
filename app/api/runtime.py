@@ -253,6 +253,7 @@ class RuntimeManus(Manus):
         "revit_set_base_point",
         "revit_save_as",
         "revit_export_ifc",
+        "revit_bim_modeling",
     }
 
     @staticmethod
@@ -364,6 +365,7 @@ class RuntimeManus(Manus):
             "revit_launch_application",
             "revit_launch_versioned_model",
             "revit_open_project_model",
+            "revit_bim_modeling",
             "ensure_autocad_running",
             "revit_create_and_name_ar_rooms",
             "sz_ifc_open_model",
@@ -388,6 +390,26 @@ class RuntimeManus(Manus):
         if payload.get("status") != "selection_required":
             return None
         message = str(payload.get("message") or "找到多个应用，请选择要打开的版本。")
+        if normalized_name == "revit_bim_modeling":
+            versions = payload.get("revit_versions")
+            if isinstance(versions, list):
+                normalized_versions = sorted(
+                    {
+                        int(version)
+                        for version in versions
+                        if str(version).isdigit() and 2000 <= int(version) <= 2099
+                    }
+                )
+                if normalized_versions:
+                    choices = "\n".join(
+                        f"{index}. Revit {version}"
+                        for index, version in enumerate(normalized_versions, start=1)
+                    )
+                    return (
+                        "检测到本机安装了多个 Revit 版本，请选择本次建模要使用的版本：\n"
+                        f"{choices}\n"
+                        "也可以提供目标 RVT 文件路径，我会按模型版本继续。"
+                    )
         candidates = payload.get("candidates")
         if not isinstance(candidates, list):
             return message

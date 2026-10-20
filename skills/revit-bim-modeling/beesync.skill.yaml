@@ -1,0 +1,11 @@
+package_version: 1.0.0
+mcp_bindings:
+  - server_id: revit_local
+    tools:
+      - revit_open_file
+      - revit_launch_application
+      - revit_open_project_model
+      - revit_bim_modeling
+permissions:
+  filesystem: explicit_paths_and_workspace
+  network: false

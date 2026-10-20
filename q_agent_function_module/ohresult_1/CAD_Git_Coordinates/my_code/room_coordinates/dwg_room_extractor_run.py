@@ -13,7 +13,11 @@ _config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__fi
 with open(_config_path, "r", encoding="utf-8") as f:
     config = yaml.safe_load(f)
 
-update_roomName = config["revit"]["update_roomName"]
+_env_revit_base = os.environ.get("BEESYNC_REVIT_API_BASE_URL")
+if _env_revit_base:
+    update_roomName = f"{_env_revit_base.rstrip('/')}/UpdateRoomName"
+else:
+    update_roomName = config["revit"]["update_roomName"]
 
 
 # 正则表达：匹配所有非中文字符和非英文字母（即包含数字或特殊符号）

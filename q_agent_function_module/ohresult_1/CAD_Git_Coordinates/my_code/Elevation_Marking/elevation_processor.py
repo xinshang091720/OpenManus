@@ -412,7 +412,20 @@ class ElevationProcessor:
             if i + 1 < n:
                 next_item = sorted_elevs[i + 1]
                 diff = abs(next_item.elevation_val - curr.elevation_val)
-                if diff <= self.DUAL_ELEVATION_DIFF_MAX:
+                # 判定是否允许组合为同层双标高：
+                # 1) 室外地坪与室内 ±0.000 (或任何其它主楼层) 绝不是同层双标高
+                is_outdoor = any(
+                    ("地坪" in (it.raw_text or "") or (it.floor_hint and "地坪" in it.floor_hint))
+                    for it in (curr, next_item)
+                ) or (curr.elevation_val < 0 and next_item.elevation_val >= 0 and diff > 0.15)
+
+                # 2) 女儿墙/压顶作为屋面附属构件，绝不与下方屋顶结构层合并为同层双标高
+                is_parapet = any(
+                    ("女儿墙" in (it.raw_text or "") or (it.floor_hint and "女儿墙" in it.floor_hint))
+                    for it in (curr, next_item)
+                )
+
+                if diff <= self.DUAL_ELEVATION_DIFF_MAX and not is_outdoor and not is_parapet:
                     # 判定为同层双标高
                     nodes.append({
                         "item": curr,
@@ -638,23 +651,39 @@ class ElevationProcessor:
                         # 建筑常识熔断：正标高 (> 0.200m) 严禁向下外推为地下室 (负楼层)
                         if groups_info[idx]["elevation_val"] > 0.200:
                             break
+                        curr_hint = groups_info[idx].get("hint") or ""
+                        # 若自身带有地坪标记或紧随0标高之下的微负标高，判定为室外地坪
+                        if "地坪" in curr_hint or (cur_num == 1 and groups_info[idx]["elevation_val"] >= -0.6):
+                            groups_info[idx]["assigned_floor"] = "室外地坪"
+                            continue
                         cur_num -= 1
                         if cur_num == 0:
                             cur_num = -1
                         groups_info[idx]["floor_num"] = cur_num
                         groups_info[idx]["assigned_floor"] = f"{cur_num}F"
 
-                # 向上外推顶层（屋顶/屋面）
+                # 向上外推顶层（屋顶/屋面/女儿墙/结构）
                 highest_idx = known_indices[-1]
                 unassigned_above = [idx for idx in range(highest_idx + 1, n_groups) if groups_info[idx]["assigned_floor"] is None]
                 if unassigned_above:
-                    # 紧随最高常规楼层的第一个赋予 "屋顶层"
-                    groups_info[unassigned_above[0]]["assigned_floor"] = "屋顶层"
-                    # 其余上方标高全部赋予 "屋面"
-                    for idx in unassigned_above[1:]:
-                        groups_info[idx]["assigned_floor"] = "屋面"
+                    for idx in unassigned_above:
+                        h = groups_info[idx].get("hint") or ""
+                        if "女儿墙" in h or "压顶" in h:
+                            groups_info[idx]["assigned_floor"] = "女儿墙"
+                        elif "结构" in h:
+                            groups_info[idx]["assigned_floor"] = "结构"
+                        elif any(k in h for k in ("机房", "水箱间")):
+                            groups_info[idx]["assigned_floor"] = h
 
-            # 3.4 层内局部附属标高归属（处理夹在已知连续层之间未命名的局部标高，如 -2F 底板与 -1F 之间的局部降板/结构标高 -16.870）
+                    still_unassigned = [idx for idx in unassigned_above if groups_info[idx]["assigned_floor"] is None]
+                    if still_unassigned:
+                        # 紧随最高常规楼层的第一个赋予 "屋顶层"
+                        groups_info[still_unassigned[0]]["assigned_floor"] = "屋顶层"
+                        # 其余上方标高赋予 "屋面"
+                        for idx in still_unassigned[1:]:
+                            groups_info[idx]["assigned_floor"] = "屋面"
+
+            # 3.4 层内局部附属标高归属（处理夹在已知连续层之间未命名的局部标高）
             for idx in range(n_groups):
                 if groups_info[idx]["assigned_floor"] is None:
                     prev_idx = idx - 1
@@ -672,7 +701,7 @@ class ElevationProcessor:
                         if next_idx < n_groups:
                             next_elev = groups_info[next_idx]["elevation_val"]
                             diff_next = abs(next_elev - curr_elev)
-                            # 与前一层高差较小 (<= 1.8m)，且明显归属于前一层空间 (diff_prev <= diff_next * 0.5)
+                            # 与前一层高差较小 (<= 1.8m)，且明显归属于前一层空间
                             if diff_prev <= 1.8 and diff_prev <= diff_next * 0.5:
                                 groups_info[idx]["assigned_floor"] = groups_info[prev_idx]["assigned_floor"]
                                 groups_info[idx]["floor_num"] = groups_info[prev_idx]["floor_num"]
@@ -681,10 +710,21 @@ class ElevationProcessor:
                                 groups_info[idx]["assigned_floor"] = groups_info[prev_idx]["assigned_floor"]
                                 groups_info[idx]["floor_num"] = groups_info[prev_idx]["floor_num"]
         else:
-            # 全图完全无楼层文字标注时，直接标记为未知楼层，不主动推导
-            for g in groups_info:
-                g["assigned_floor"] = "未知楼层"
-                g["floor_num"] = None
+            # ponytail: 全图完全无楼层文字标注时，按标高自底向上排序推导楼层
+            zero_candidates = [idx for idx, g in enumerate(groups_info) if abs(g["elevation_val"]) <= 0.3]
+            base_1f_idx = zero_candidates[0] if zero_candidates else 0
+            groups_info[base_1f_idx]["assigned_floor"] = "1F"
+            groups_info[base_1f_idx]["floor_num"] = 1
+            for idx in range(base_1f_idx + 1, n_groups):
+                fn = idx - base_1f_idx + 1
+                groups_info[idx]["assigned_floor"] = f"{fn}F"
+                groups_info[idx]["floor_num"] = fn
+            for step, idx in enumerate(range(base_1f_idx - 1, -1, -1), start=1):
+                if step == 1 and groups_info[idx]["elevation_val"] >= -0.6:
+                    groups_info[idx]["assigned_floor"] = "室外地坪"
+                else:
+                    groups_info[idx]["assigned_floor"] = f"-{step}F"
+                    groups_info[idx]["floor_num"] = -step
 
         # =========================================================================
         # 阶段 4：组装最终结果与同层双标高拼接

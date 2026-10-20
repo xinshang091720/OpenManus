@@ -23,12 +23,14 @@
 | `revit_run_ifc_assignment` | `RevitWorkflow.run`（`app/workflows/revit_ifc_assignment.py`）包装 `RevitIfcAssignmentWorkflow.run` | 是 | 活动模型；专业已确认；含 preflight + 保存到 `ifc-assigned` |
 | `revit_export_ifc` | `RevitProjectDelivery.export_ifc` | 是 | 恰好 1 个 Revit 实例 |
 | `revit_inspect_ifc` | `RevitProjectDelivery.inspect_ifc` → `run_sz_ifc_full_inspection` | 否(Revit) | SZ-IFC 已加载该 IFC |
+| `revit_bim_modeling` | `RevitBimModelingWorkflow.run`（`app/revit/modeling.py`） | 是 | CAD 图纸目录（立面+平面） |
 | `revit_preview_room_sync` / `revit_apply_room_sync` | `RoomSyncWorkflow.preview/apply`（`app/revit/room_sync.py`） | 预览否/应用是 | 旧版两步流程 |
 | 底层 API | `RevitApiClient`（`app/revit/client.py`） | — | 见方法列表 |
 
 `RevitApiClient` 方法：`open_revit_file`、`base_point_setting`、`base_point_setting_is_correct`、`get_dwg_text`、`export_ifc`、`save_as`、
 `batch_create_rooms`、`update_room_name`、`dwg_revit_grid_data`、`one_click_identifier`、
-`get_ifc_ident`、`get_level_ifc_ident`、`clear_parameters`、`one_click_assignment`、`open_delivery`。
+`get_ifc_ident`、`get_level_ifc_ident`、`clear_parameters`、`one_click_assignment`、`open_delivery`、
+`create_model`、`create_level_view`、`create_components`。
 
 关键基础设施：
 - `call_revit_operation`（`app/revit/operations.py`）：统一两小时上限 + 30s 心跳，超时抛 `RevitOperationUnknown`，**不自动重试**。

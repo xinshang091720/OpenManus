@@ -112,14 +112,16 @@ class BatchElevationMerger:
         """评估楼层名称的确定性得分，越高越优先"""
         if not name or name == "未知楼层":
             return 0
-        if any(k in name for k in ("屋面", "屋顶", "RF")):
-            return 80
+        if any(k in name for k in ("室外地坪", "室外地面", "女儿墙", "机房", "水箱间")):
+            return 110  # 原图原生特定语义标高最高优先级
         if re.match(r'^[bB]\d+$', name):  # 如 B1, B2
             return 100
         if re.match(r'^[fF]\d+$', name):  # 如 F1, F2, F14
             return 100
         if re.match(r'^-?\d+[fF]?$', name):  # 如 1F, -1F
             return 90
+        if any(k in name for k in ("屋面", "屋顶", "RF")):
+            return 80
         return 50
 
     @classmethod
@@ -157,17 +159,17 @@ class BatchElevationMerger:
         if not nodes:
             return []
 
-        # 1. 统计常规楼层（非屋面、非未知楼层）的出现次数
+        # 1. 统计常规楼层（非屋面、非未知楼层、非特殊语义标高）的出现次数
         base_floor_counts: Dict[str, int] = {}
         for node in nodes:
             bf = node["base_floor"]
-            if bf != "未知楼层" and not any(k in bf for k in ("屋", "RF")):
+            if bf != "未知楼层" and not any(k in bf for k in ("屋", "RF", "室外地坪", "女儿墙")):
                 base_floor_counts[bf] = base_floor_counts.get(bf, 0) + 1
 
-        # 2. 统计屋顶/屋面节点的索引位置
+        # 2. 统计通用屋顶/屋面节点的索引位置（排除女儿墙、室外地坪等独立特征层）
         roof_indices = [
             i for i, node in enumerate(nodes)
-            if any(k in node["base_floor"] for k in ("屋", "RF"))
+            if node["base_floor"] in ("屋顶", "屋顶层", "屋面", "屋面层") or re.match(r'^RF\d*$', node["base_floor"], re.IGNORECASE)
         ]
 
         results: List[Dict[str, Any]] = []
@@ -192,9 +194,10 @@ class BatchElevationMerger:
                 else:
                     final_name = bf
 
-            # 附加结构标记 (S)
-            if has_s and "(S)" not in final_name:
-                final_name = f"{final_name}(S)"
+            # 附加结构标记 (S)（特定语义名称如“结构”、“室外地坪”、“女儿墙”不追加）
+            if has_s and "(S)" not in final_name and "（S）" not in final_name:
+                if final_name not in ("结构", "室外地坪", "女儿墙"):
+                    final_name = f"{final_name}(S)"
 
             results.append({
                 "floor": final_name,

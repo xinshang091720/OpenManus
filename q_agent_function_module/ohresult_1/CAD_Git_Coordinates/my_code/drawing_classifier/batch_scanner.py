@@ -61,7 +61,11 @@ def scan_dwg_files(folder_or_files: Union[str, List[str], Path]) -> List[Path]:
 
 
 def _is_invalid_file(p: Path) -> bool:
-    """检查是否为垃圾临时文件或空文件"""
+    """检查是否为垃圾临时文件、缓存文件或空文件"""
+    for part in p.parts[:-1]:
+        part_l = part.lower()
+        if part.startswith(".") or part_l in ("cache", "temp", "tmp", ".multi_floor_dwgs", "_multi_floor_dwgs"):
+            return True
     name = p.name
     if name.startswith("~$") or name.startswith("."):
         return True

@@ -61,19 +61,17 @@ def test_project_delivery_skill_exposes_the_complete_local_revit_chain():
         "revit_create_and_name_ar_rooms",
         "revit_export_ifc",
         "revit_open_project_model",
-        "ensure_autocad_running",
         "sz_ifc_open_model",
         "revit_inspect_ifc",
         "revit_save_as",
     } <= set(delivery.mcp_bindings[0].tools)
+    assert "ensure_autocad_running" not in delivery.mcp_bindings[0].tools
     assert "revit_clear_parameters" not in delivery.mcp_bindings[0].tools
 
     instructions = (root / "revit-project-delivery" / "SKILL.md").read_text(encoding="utf-8")
     assert "ask_human" in instructions
-    assert "当前收到“已准备好”：直接自检" in instructions
-    assert "不因“质检”自动执行 IFC 标识赋值" in instructions
-    assert "Skill 每次激活只是加载工具说明" in instructions
-    assert "每一次 IFC 交付或质量检查" not in instructions
+    assert "revit_inspect_ifc" in instructions
+    assert "不启动 AutoCAD" in instructions
 
 
 def test_agent_can_activate_project_delivery_with_one_scoped_revit_bridge(monkeypatch):

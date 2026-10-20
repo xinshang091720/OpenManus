@@ -15,7 +15,11 @@ _config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__fi
 with open(_config_path, "r", encoding="utf-8") as f:
     config = yaml.safe_load(f)
 
-get_dwg_text_coordinates_layer = config["revit"]["get_dwg_text_coordinates_layer"]
+_env_revit_base = os.environ.get("BEESYNC_REVIT_API_BASE_URL")
+if _env_revit_base:
+    get_dwg_text_coordinates_layer = f"{_env_revit_base.rstrip('/')}/GetDwgText"
+else:
+    get_dwg_text_coordinates_layer = config["revit"]["get_dwg_text_coordinates_layer"]
 
 
 @dataclass
@@ -54,11 +58,13 @@ class RevitDWGExtractor:
     )
     ELEVATION_LAYER_KEYWORDS = ("ELEV", "BG", "标高", "DIM_ELEV")
     FLOOR_PATTERN = re.compile(
-        r'^(?:(?:\+|-)?\d+[fF]|B\d+|[bB][fF]|RF|SF|屋顶层?|屋面层?)$'
+        r'^(?:(?:\+|-)?\d+[fF]|B\d+|[bB][fF]|RF\d*|SF|屋顶层?|屋面层?|室外地坪|室外地面|地坪|女儿墙(?:顶)?|压顶|结构(?:面)?|机房(?:层)?|电梯机房|水箱间|檐口|坡屋面|(?:半)?地下[一二三四五六七八九十\d]+层?)$'
     )
 
     def __init__(self, api_url: Optional[str] = None, timeout: Optional[int] = None):
-        self.api_url = api_url or get_dwg_text_coordinates_layer
+        _env = os.environ.get("BEESYNC_REVIT_API_BASE_URL")
+        _default = f"{_env.rstrip('/')}/GetDwgText" if _env else get_dwg_text_coordinates_layer
+        self.api_url = api_url or _default
         self.timeout = timeout  # 默认 None：不做任何时间限制，完全等待 Revit 处理完毕返回
 
     def extract_candidates(self, dwg_path: str) -> Tuple[List[ElevationCandidate], List[FloorCandidate]]:
@@ -122,15 +128,24 @@ class RevitDWGExtractor:
 
     @staticmethod
     def _attach_horizontal_suffixes(elevations: List[ElevationCandidate], all_texts: List[Tuple[str, float, float]]):
-        """探测标高左右两侧同行/紧邻的说明文字，并拼入 raw_text"""
+        """探测标高左右两侧同行/紧邻的说明文字，并拼入 raw_text 与 floor_hint"""
+        keywords = (
+            "结构", "结", "建筑", "檐口", "(S)", "（S）",
+            "女儿墙", "室外地坪", "室外地面", "地坪", "机房", "水箱间", "坡屋面", "屋顶", "屋面", "压顶"
+        )
         for elev in elevations:
             for text, tx, ty in all_texts:
                 dx = tx - elev.x
                 dy = abs(ty - elev.y)
-                if -1500.0 <= dx <= 2500.0 and dy <= 500.0:
-                    if any(k in text for k in ("结构", "结", "建筑", "檐口", "(S)", "（S）")):
-                        if text not in elev.raw_text:
-                            elev.raw_text = f"{elev.raw_text} {text}".strip()
+                if -2000.0 <= dx <= 4000.0 and dy <= 400.0:
+                    if any(k in text for k in keywords):
+                        clean_t = text.strip()
+                        if clean_t and clean_t not in elev.raw_text:
+                            elev.raw_text = f"{elev.raw_text} {clean_t}".strip()
+                        if not elev.floor_hint:
+                            inside = re.sub(r'^[（\(](.*?)[）\)]$', r'\1', clean_t).strip()
+                            if inside and any(k in inside for k in ("室外地坪", "室外地面", "地坪", "女儿墙", "压顶", "结构", "机房", "屋面", "屋顶")):
+                                elev.floor_hint = inside
 
     @classmethod
     def _clean_cad_text(cls, text: str) -> str:

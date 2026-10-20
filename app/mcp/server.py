@@ -29,6 +29,7 @@ from app.tool.revit_delivery import (
     RevitSetBasePoint,
 )
 from app.tool.revit_room_creation import RevitCreateAndNameArRooms
+from app.tool.revit_modeling import RevitBimModeling
 from app.tool.windows_app import RevitLaunchApplication, RevitLaunchVersionedModel
 from app.tool.desktop_bim import (
     EnsureAutocadRunning,
@@ -72,6 +73,7 @@ class MCPServer:
         self.tools["revit_set_base_point"] = RevitSetBasePoint()
         self.tools["revit_export_ifc"] = RevitExportIfc()
         self.tools["revit_inspect_ifc"] = RevitInspectIfc()
+        self.tools["revit_bim_modeling"] = RevitBimModeling()
 
     async def _execute_revit_tool(
         self, tool_name: str, tool: BaseTool, kwargs: Dict[str, Any]

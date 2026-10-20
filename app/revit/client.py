@@ -4,7 +4,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 
 import httpx
 
@@ -226,6 +226,45 @@ class RevitApiClient:
             {"ElementIds": [str(eid) for eid in element_ids]},
             wait_forever,
         )
+
+    async def create_model(
+        self, model_name: str, major_name: str, model_save_path: str, *, wait_forever: bool = False
+    ) -> Dict[str, Any]:
+        """Create a new Revit project document from discipline template and save it."""
+        return await self._post_operation(
+            "/CreateModel",
+            {
+                "modelName": model_name,
+                "marjorName": major_name,
+                "modelSavePath": model_save_path,
+            },
+            wait_forever,
+        )
+
+    async def create_level_view(
+        self, leve_datas: list[Dict[str, Any]], major_name: str, *, wait_forever: bool = False
+    ) -> Dict[str, Any]:
+        """Create level views and link drawings for component extraction."""
+        return await self._post_operation(
+            "/CreateLeveView",
+            {
+                "leveDatas": leve_datas,
+                "marjorName": major_name,
+            },
+            wait_forever,
+        )
+
+    async def create_components(
+        self, major_name: Optional[Union[str, Dict[str, Any]]] = None, *, wait_forever: bool = False
+    ) -> Dict[str, Any]:
+        """Batch-generate model components (grids, walls, columns, doors, etc.) in Revit."""
+        if isinstance(major_name, dict):
+            payload = dict(major_name)
+        elif major_name:
+            payload = {"marjorName": str(major_name)}
+        else:
+            payload = {}
+        return await self._post_operation("/CraeteComponentApi", payload, wait_forever)
 
     async def _post_operation(
         self, path: str, payload: Optional[Dict[str, Any]], wait_forever: bool

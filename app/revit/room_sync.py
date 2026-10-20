@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from app.mcp.revit_lock import RevitProcessLock
-from app.revit.client import RevitApiClient
+from app.revit.client import RevitApiClient, RevitApiError
 from app.revit.operations import call_revit_operation
 from app.runtime_paths import runtime_paths
 from app.tool_progress import set_tool_progress
@@ -159,7 +159,7 @@ def _take_preview(preview_id: str) -> dict[str, Any] | None:
 def _points(node: dict[str, Any]) -> tuple[tuple[float, ...], tuple[float, ...]]:
     begin, end = node.get("Begin_Position"), node.get("End_Position")
     if not isinstance(begin, list) or not isinstance(end, list) or len(begin) < 2 or len(end) < 2:
-        raise ValueError("Revit 插件返回的轴网端点不完整")
+        raise ValueError("未匹配到有效轴网对（Revit 插件未返回有效轴网端点坐标）")
     return tuple(map(float, begin)), tuple(map(float, end))
 
 
@@ -587,9 +587,17 @@ class RoomSyncWorkflow:
         if discipline.strip().upper() not in {"AR", "建筑"}:
             raise ValueError("房间同步仅适用于用户确认的建筑（AR）模型")
         async with self.lock.hold():
-            grid = await call_revit_operation(
-                self.client, "DwgRevitGridData", self.client.dwg_revit_grid_data, dwg_path
-            )
+            try:
+                grid = await call_revit_operation(
+                    self.client, "DwgRevitGridData", self.client.dwg_revit_grid_data, dwg_path
+                )
+            except RevitApiError as error:
+                return {
+                    "status": "blocked",
+                    "reason": str(error),
+                    "grid_axis_code": {"revit": None, "dwg": None},
+                    "cad_document_closed": True,
+                }
             from q_agent_function_module.ohresult.CAD_Git_Coordinates.my_code.room_coordinates.coordinate_transformation import (
                 calculate_segment_translation_vector,
                 transform_room_texts,
@@ -597,6 +605,24 @@ class RoomSyncWorkflow:
             )
 
             rvt_grid, dwg_grid = grid.get("rvtGrid", {}), grid.get("dwgGrid", {})
+            grid_msg = grid.get("msg") or ""
+            if (
+                "未找到" in grid_msg
+                or not isinstance(rvt_grid, dict)
+                or not isinstance(dwg_grid, dict)
+                or not rvt_grid.get("Begin_Position")
+                or not dwg_grid.get("Begin_Position")
+            ):
+                return {
+                    "status": "blocked",
+                    "reason": grid_msg if "未找到" in grid_msg else "未找到 Revit 与 DWG 匹配的垂直相交轴网对",
+                    "grid_axis_code": {
+                        "revit": rvt_grid.get("AxisCode") if isinstance(rvt_grid, dict) else None,
+                        "dwg": dwg_grid.get("AxisCode") if isinstance(dwg_grid, dict) else None,
+                    },
+                    "cad_document_closed": True,
+                }
+
             rvt_line, dwg_line = _points(rvt_grid), _points(dwg_grid)
             alignment = validate_translation_alignment(
                 rvt_line, dwg_line, allow_length_mismatch=allow_length_mismatch

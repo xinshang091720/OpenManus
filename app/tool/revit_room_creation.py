@@ -1,5 +1,6 @@
 """High-level AR room creation and naming tool."""
 
+import json
 from typing import Any
 
 from pydantic import Field
@@ -76,16 +77,23 @@ class RevitCreateAndNameArRooms(BaseTool):
     ) -> ToolResult:
         workflow = ArRoomCreationWorkflow(self.client)
         try:
-            return self.success_response(
-                await workflow.run(
-                    rvt_file_path=rvt_file_path,
-                    dwg_folder_path=dwg_folder_path,
-                    discipline=discipline,
-                    allow_length_mismatch=allow_length_mismatch,
-                    save_folder_path=save_folder_path,
-                    floor_overrides=floor_overrides,
-                )
+            result = await workflow.run(
+                rvt_file_path=rvt_file_path,
+                dwg_folder_path=dwg_folder_path,
+                discipline=discipline,
+                allow_length_mismatch=allow_length_mismatch,
+                save_folder_path=save_folder_path,
+                floor_overrides=floor_overrides,
             )
+            if isinstance(result, dict) and result.get("status") == "skipped":
+                processed = result.get("processed_drawing_count", 0)
+                skipped = result.get("skipped_drawing_count", 0)
+                if processed > 0 and skipped >= processed:
+                    reason = result.get("reason") or "所提供的 DWG 图纸均未检测到与当前模型匹配的有效楼层轴网或房间信息"
+                    return self.fail_response(
+                        f"房间创建未成功（所有图纸均被跳过）：{reason}\n{json.dumps(result, ensure_ascii=False, indent=2)}"
+                    )
+            return self.success_response(result)
         except (ValueError, OSError, RuntimeError, RevitOperationUnknown) as error:
             return self.fail_response(str(error))
         finally:
